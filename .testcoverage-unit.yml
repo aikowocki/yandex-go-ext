@@ -1,0 +1,16 @@
+# Конфигурация покрытия unit-тестами внутренних пакетов.
+# Запуск: task unit-coverage.
+
+profile: coverage-unit.out
+
+threshold:
+  # Проверяем только общий порог; отдельные файлы и пакеты могут иметь 0%.
+  file: 0
+  package: 0
+  total: 50
+
+# Исключаем сгенерированный sqlc-код и mockery-моки.
+exclude:
+  paths:
+    - internal/infra/postgres/gen/
+    - internal/contracts/mocks/

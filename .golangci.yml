@@ -1,0 +1,15 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - revive
+  settings:
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+  exclusions:
+    paths:
+      - "api/proto/gen/.*"
+      - "internal/infra/postgres/gen/.*"

@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avatar Gallery</title>
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+<div class="container mx-auto max-w-6xl px-4 py-8">
+    <div class="overflow-hidden rounded-2xl border border-white/20 bg-white/10 shadow-2xl backdrop-blur-lg">
+        <header class="bg-gradient-to-r from-purple-600 to-blue-600 p-6">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <p class="text-sm uppercase tracking-widest text-white/70">GophProfile</p>
+                    <h1 class="text-3xl font-bold text-white">Avatar Gallery</h1>
+                    <p id="userLabel" class="mt-2 text-white/80"></p>
+                </div>
+                <a id="uploadLink" href="/web/upload"
+                   class="rounded-lg bg-white/15 px-4 py-2 text-center font-semibold text-white transition hover:bg-white/25">
+                    Upload avatar
+                </a>
+            </div>
+        </header>
+
+        <main class="p-6">
+            <div id="errorMessage" class="mb-6 hidden rounded-lg border border-red-500/50 bg-red-500/20 px-4 py-3 text-red-200"></div>
+            <div id="loading" class="rounded-xl border border-white/15 bg-black/20 px-6 py-10 text-center text-white/70">
+                Loading avatars...
+            </div>
+            <div id="emptyState" class="hidden rounded-xl border border-dashed border-white/25 bg-black/10 px-6 py-12 text-center text-white/70">
+                <p class="text-lg font-semibold text-white">No avatars yet</p>
+                <p class="mt-2">Upload your first avatar to see it here.</p>
+            </div>
+            <section id="gallery" class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3"></section>
+            <div id="originalModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-label="Original avatar preview">
+                <button id="closeOriginal" type="button" class="absolute right-5 top-5 rounded-full bg-white/15 px-4 py-2 text-2xl text-white hover:bg-white/25" aria-label="Close">×</button>
+                <img id="originalImage" src="" alt="Original avatar" class="max-h-[90vh] max-w-[90vw] rounded-xl object-contain shadow-2xl">
+            </div>
+        </main>
+    </div>
+</div>
+
+<script>
+    const userId = decodeURIComponent(window.location.pathname.split('/').pop());
+    const thumbnailSizes = ['100x100', '300x300'];
+    const gallery = document.getElementById('gallery');
+    const loading = document.getElementById('loading');
+    const emptyState = document.getElementById('emptyState');
+    const errorMessage = document.getElementById('errorMessage');
+    const originalModal = document.getElementById('originalModal');
+    const originalImage = document.getElementById('originalImage');
+    const closeOriginal = document.getElementById('closeOriginal');
+    const uploadLink = document.getElementById('uploadLink');
+    document.getElementById('userLabel').textContent = `User: ${userId}`;
+    uploadLink.href = `/web/upload?user_id=${encodeURIComponent(userId)}`;
+
+    function openOriginal(avatar) {
+        originalImage.src = `/api/v1/avatars/${encodeURIComponent(avatar.id)}?size=original`;
+        originalImage.alt = `${avatar.file_name} original`;
+        originalModal.classList.remove('hidden');
+        originalModal.classList.add('flex');
+    }
+
+    function closeOriginalPreview() {
+        originalModal.classList.add('hidden');
+        originalModal.classList.remove('flex');
+        originalImage.src = '';
+    }
+
+    closeOriginal.addEventListener('click', closeOriginalPreview);
+    originalModal.addEventListener('click', event => {
+        if (event.target === originalModal) closeOriginalPreview();
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') closeOriginalPreview();
+    });
+
+    function showError(message) {
+        errorMessage.textContent = message;
+        errorMessage.classList.remove('hidden');
+    }
+
+    function formatBytes(bytes) {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    function escapeHtml(value) {
+        return String(value).replace(/[&<>'"]/g, character => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            "'": '&#39;',
+            '"': '&quot;'
+        }[character]));
+    }
+
+    function statusLabel(status) {
+        return status === 'processing' ? 'Processing thumbnails...' : status;
+    }
+
+    function createCard(avatar) {
+        const card = document.createElement('article');
+        card.className = 'relative overflow-hidden rounded-xl border border-white/15 bg-black/20 shadow-lg';
+        card.innerHTML = `
+            ${avatar.is_active ? '<span class="absolute right-3 top-3 z-10 rounded-full bg-emerald-500/90 px-3 py-1 text-xs font-bold text-white shadow-lg">✓ Active</span>' : ''}
+            <div class="flex flex-col gap-4 bg-black/25 p-3">
+                ${thumbnailSizes.map(size => `
+                    <div class="space-y-2">
+                        <p class="text-center text-xs font-semibold uppercase tracking-wide text-white/60">${size}</p>
+                        <div data-thumbnail-size="${size}" style="min-height: ${size === '100x100' ? '132px' : '332px'}" class="flex items-center justify-center rounded-lg bg-black/25">
+                            <div class="text-center text-white/50">
+                                <div class="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-purple-400"></div>
+                                <span>Loading preview...</span>
+                            </div>
+                        </div>
+                    </div>`).join('')}
+            </div>
+            <div class="space-y-3 p-4">
+                <div>
+                    <h2 class="truncate font-semibold text-white" title="${escapeHtml(avatar.file_name)}">${escapeHtml(avatar.file_name)}</h2>
+                    <p class="mt-1 text-sm text-white/60">${avatar.dimensions.width} × ${avatar.dimensions.height} · ${formatBytes(avatar.size)}</p>
+                </div>
+                <p class="text-sm text-white/70">Status: ${escapeHtml(statusLabel(avatar.status))}</p>
+                <div class="grid grid-cols-2 gap-2">
+                    <a href="/web/upload?user_id=${encodeURIComponent(userId)}&edit_avatar_id=${encodeURIComponent(avatar.id)}" class="edit-button rounded-lg border border-purple-300/40 px-3 py-2 text-center text-sm font-semibold text-purple-200 transition hover:bg-purple-500/20">
+                        Edit thumbnail
+                    </a>
+                    <button type="button" class="delete-button rounded-lg border border-red-400/40 px-3 py-2 text-sm font-semibold text-red-200 transition hover:bg-red-500/20">
+                        Delete avatar
+                    </button>
+                </div>
+            </div>`;
+
+        const deleteButton = card.querySelector('.delete-button');
+        deleteButton.addEventListener('click', () => deleteAvatar(avatar, card, deleteButton));
+
+        if (avatar.status === 'completed' || avatar.status === 'processing') {
+            thumbnailSizes.forEach(size => {
+                const preview = card.querySelector(`[data-thumbnail-size="${size}"]`);
+                const [width, height] = size.split('x').map(Number);
+                const image = document.createElement('img');
+                image.className = 'h-auto max-w-full cursor-pointer rounded-full object-contain transition hover:scale-105';
+                image.width = width;
+                image.height = height;
+                image.alt = `${avatar.file_name} ${size}`;
+                image.addEventListener('click', () => openOriginal(avatar));
+                image.src = `/api/v1/avatars/${encodeURIComponent(avatar.id)}?size=${encodeURIComponent(size)}`;
+                image.onload = () => preview.replaceChildren(image);
+                image.onerror = () => {
+                    if (avatar.status === 'processing') {
+                        preview.innerHTML = '<span class="px-4 text-center text-sm text-white/50">Thumbnail is being prepared...</span>';
+                    } else {
+                        preview.innerHTML = '<span class="px-4 text-center text-sm text-red-200">Preview unavailable</span>';
+                    }
+                };
+            });
+        }
+        return card;
+    }
+
+    async function deleteAvatar(avatar, card, button) {
+        if (!window.confirm(`Delete ${avatar.file_name}?`)) return;
+        button.disabled = true;
+        button.textContent = 'Deleting...';
+        try {
+            const response = await fetch(`/api/v1/avatars/${encodeURIComponent(avatar.id)}`, {
+                method: 'DELETE',
+                headers: { 'X-User-ID': userId }
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            card.remove();
+            if (!gallery.children.length) emptyState.classList.remove('hidden');
+        } catch (error) {
+            button.disabled = false;
+            button.textContent = 'Delete avatar';
+            showError(`Delete failed: ${error.message}`);
+        }
+    }
+
+    async function loadGallery() {
+        try {
+            const response = await fetch(`/api/v1/users/${encodeURIComponent(userId)}/avatars?limit=100`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            loading.classList.add('hidden');
+            if (!data.items || data.items.length === 0) {
+                emptyState.classList.remove('hidden');
+                return;
+            }
+            data.items.forEach(avatar => gallery.appendChild(createCard(avatar)));
+        } catch (error) {
+            loading.classList.add('hidden');
+            showError(`Failed to load avatars: ${error.message}`);
+        }
+    }
+
+    if (!userId || userId === 'gallery.html') {
+        loading.classList.add('hidden');
+        showError('User ID is missing from the gallery URL.');
+    } else {
+        loadGallery();
+    }
+</script>
+</body>
+</html>

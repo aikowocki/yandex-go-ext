@@ -1,0 +1,2 @@
+0 3 * * * /app/cronjob retention >> /proc/1/fd/1 2>> /proc/1/fd/2
+0 4 * * 0 /app/cronjob reconcile >> /proc/1/fd/1 2>> /proc/1/fd/2

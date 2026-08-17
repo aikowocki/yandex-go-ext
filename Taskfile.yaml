@@ -1,0 +1,122 @@
+version: '3'
+
+tasks:
+  sqlc-generate:
+    desc: Генерирует Go код из SQL-запросов (sqlc.yaml)
+    cmds:
+      - sqlc generate
+
+  mocks-generate:
+    desc: Генерирует моки интерфейсов через mockery (.mockery.yaml)
+    cmds:
+      - mockery
+
+  generate:
+    desc: Прогнать всю кодогенерацию (sqlc, mocks)
+    cmds:
+      - task: sqlc-generate
+      - task: mocks-generate
+
+  build:
+    desc: Собрать бинарные файлы сервиса
+    cmds:
+      - mkdir -p bin
+      - go build -o bin/server ./cmd/server
+      - go build -o bin/worker ./cmd/worker
+      - go build -o bin/seed ./cmd/seed
+      - go build -o bin/cronjob ./cmd/cronjob
+
+  cronjob-retention:
+    desc: Однократно запустить retention cronjob
+    cmds:
+      - docker compose -f deployments/docker/docker-compose.yml run --rm cronjob retention
+
+  cronjob-reconcile:
+    desc: Однократно запустить cronjob сверки MinIO
+    cmds:
+      - docker compose -f deployments/docker/docker-compose.yml run --rm cronjob reconcile
+
+  cronjob-scheduler-up:
+    desc: Запустить контейнер планировщика cronjob
+    cmds:
+      - docker compose -f deployments/docker/docker-compose.yml up -d cronjob-scheduler
+
+  cronjob-scheduler-down:
+    desc: Остановить контейнер планировщика cronjob
+    cmds:
+      - docker compose -f deployments/docker/docker-compose.yml stop cronjob-scheduler
+
+  test:
+    desc: Запустить все тесты с race detector
+    cmds:
+      - go test -race -coverprofile=coverage.out ./...
+
+  test-short:
+    desc: Запустить unit-тесты
+    cmds:
+      - go test -short ./...
+
+  integration:
+    desc: Запустить интеграционные Docker-тесты по явному запросу
+    cmds:
+      - RUN_INTEGRATION=1 go test ./test/integration
+
+  vet:
+    desc: Запустить go vet
+    cmds:
+      - go vet ./...
+
+  lint:
+    desc: Прогнать golangci-lint (включая проверку документации экспортируемых сущностей)
+    cmds:
+      - golangci-lint run ./...
+
+  install-go-test-coverage:
+    desc: Установить go-test-coverage (для проверки порога покрытия, исключая generated-код)
+    cmds:
+      - go install github.com/vladopajic/go-test-coverage/v2@latest
+
+  coverage:
+    desc: Прогнать тесты с покрытием и проверить порог
+    deps: [install-go-test-coverage]
+    cmds:
+      - go test ./... -covermode=atomic -coverpkg=./... -coverprofile=coverage.out
+      - '{{.GOBIN}}/go-test-coverage --config=./.testcoverage.yml'
+    vars:
+      GOBIN:
+        sh: go env GOPATH | xargs -I{} echo {}/bin
+
+  unit-coverage:
+    desc: Проверить покрытие unit-тестами внутренних пакетов без integration и cmd
+    deps: [install-go-test-coverage]
+    cmds:
+      - go test ./internal/... -covermode=atomic -coverpkg=./internal/... -coverprofile=coverage-unit.out
+      - '{{.GOBIN}}/go-test-coverage --config=./.testcoverage-unit.yml'
+    vars:
+      GOBIN:
+        sh: go env GOPATH | xargs -I{} echo {}/bin
+
+  cover:
+    go-test-coverage --config=./.testcoverage.yml 2>&1 | grep -i "total test coverage\|threshold"
+
+  docker-up:
+    desc: Запустить локальную инфраструктуру
+    cmds:
+      - docker compose -f deployments/docker/docker-compose.yml up -d
+
+  docker-down:
+    desc: Остановить локальную инфраструктуру
+    cmds:
+      - docker compose -f deployments/docker/docker-compose.yml down
+
+  docker-restart:
+    desc: Перезапустить локальную инфраструктуру без удаления volumes
+    cmds:
+      - docker compose -f deployments/docker/docker-compose.yml down --remove-orphans
+      - task: docker-up
+
+  docker-reset:
+    desc: Сбросить локальную инфраструктуру с удалением всех volumes
+    cmds:
+      - docker compose -f deployments/docker/docker-compose.yml down -v --remove-orphans
+      - task: docker-up

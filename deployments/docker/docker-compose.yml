@@ -129,6 +129,11 @@ services:
       KAFKA_HEARTBEAT_INTERVAL: 3s
       KAFKA_FETCH_MIN_BYTES: 1
       KAFKA_FETCH_MAX_WAIT: 250ms
+#      RABBITMQ_URL: amqp://gophprofile:gophprofile-dev@rabbitmq:5672/
+#      RABBITMQ_EXCHANGE: avatars
+#      RABBITMQ_RETRY_DELAY: 30s
+#      RABBITMQ_MAX_ATTEMPTS: 5
+#      RABBITMQ_QUEUE_TYPE: classic
       LOG_FORMAT: json
     ports:
       - "8080:8080"
@@ -163,6 +168,11 @@ services:
       KAFKA_HEARTBEAT_INTERVAL: 3s
       KAFKA_FETCH_MIN_BYTES: 1
       KAFKA_FETCH_MAX_WAIT: 250ms
+      #      RABBITMQ_URL: amqp://gophprofile:gophprofile-dev@rabbitmq:5672/
+      #      RABBITMQ_EXCHANGE: avatars
+      #      RABBITMQ_RETRY_DELAY: 30s
+      #      RABBITMQ_MAX_ATTEMPTS: 5
+      #      RABBITMQ_QUEUE_TYPE: classic
       WORKER_CONCURRENCY: 4
       LOG_FORMAT: json
 

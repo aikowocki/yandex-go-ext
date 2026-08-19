@@ -39,7 +39,7 @@ func TestValidateConfig(t *testing.T) {
 }
 
 func TestNewBrokerRejectsInvalidConfig(t *testing.T) {
-	_, err := NewBroker(nil, &config.RabbitMQConfig{URL: "amqp://localhost", Exchange: "avatars", RetryDelay: -time.Second})
+	_, err := NewBroker(t.Context(), &config.RabbitMQConfig{URL: "amqp://localhost", Exchange: "avatars", RetryDelay: -time.Second})
 	if err == nil {
 		t.Fatal("NewBroker accepted invalid RabbitMQ config")
 	}

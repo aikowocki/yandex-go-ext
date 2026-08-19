@@ -34,7 +34,7 @@ func TestValidateConfig(t *testing.T) {
 }
 
 func TestNewPoolRejectsInvalidPoolLimits(t *testing.T) {
-	_, err := NewPool(nil, config.DatabaseConfig{DSN: "postgres://user:pass@localhost/db", MaxConns: 0})
+	_, err := NewPool(t.Context(), config.DatabaseConfig{DSN: "postgres://user:pass@localhost/db", MaxConns: 0})
 	if err == nil {
 		t.Fatal("NewPool accepted invalid pool limits")
 	}

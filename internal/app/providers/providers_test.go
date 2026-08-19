@@ -68,3 +68,27 @@ func TestProviderFactoryBranches(t *testing.T) {
 		t.Fatalf("NewREST() = %v, %v", server, err)
 	}
 }
+
+func TestNewBrokerRejectsInvalidWorkerConcurrency(t *testing.T) {
+	if _, err := NewBroker(context.Background(), &config.Config{Worker: config.WorkerConfig{Concurrency: 0}}); err == nil {
+		t.Fatal("NewBroker accepted invalid worker concurrency")
+	}
+}
+
+func TestNewBrokerDelegatesToBrokerFactory(t *testing.T) {
+	cfg := &config.Config{
+		Worker: config.WorkerConfig{Concurrency: 1},
+		Broker: config.BrokerConfig{Type: "unknown"},
+	}
+	if _, err := NewBroker(context.Background(), cfg); err == nil {
+		t.Fatal("NewBroker accepted unsupported broker type")
+	}
+}
+
+func TestNewRESTRejectsInvalidServerConfig(t *testing.T) {
+	cfg := &config.Config{Server: config.ServerConfig{RateLimitPerSecond: 0, RateLimitBurst: 1}}
+	avatarComponents := &components.Avatar{DB: &pgxpool.Pool{}}
+	if _, err := NewREST(cfg, avatarComponents); err == nil {
+		t.Fatal("NewREST accepted invalid server config")
+	}
+}

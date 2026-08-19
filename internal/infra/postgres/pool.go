@@ -17,10 +17,6 @@ func NewPool(ctx context.Context, cfg config.DatabaseConfig) (*pgxpool.Pool, err
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
 	}
-	if cfg.MaxConns < 1 || cfg.MinConns < 0 || cfg.MinConns > cfg.MaxConns {
-		return nil, fmt.Errorf("database pool limits are invalid")
-	}
-
 	poolConfig.MaxConns = cfg.MaxConns
 	poolConfig.MinConns = cfg.MinConns
 	poolConfig.MaxConnLifetime = cfg.MaxConnLifetime

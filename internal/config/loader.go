@@ -36,15 +36,6 @@ func Load() (*Config, error) {
 	return &cfg, nil
 }
 
-// MustLoad загружает конфигурацию и паникует при ошибке.
-func MustLoad() *Config {
-	cfg, err := Load()
-	if err != nil {
-		panic(err)
-	}
-	return cfg
-}
-
 func readEnvironment(cfg *Config) error {
 	aliases := map[string]string{
 		"GOPHPROFILE_SERVER_HOST":                     "SERVER_HOST",

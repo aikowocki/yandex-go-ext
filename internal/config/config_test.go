@@ -304,14 +304,3 @@ func TestSetTemporaryEnvRestoresSetAndUnsetValues(t *testing.T) {
 		t.Fatal("previously unset value was not unset")
 	}
 }
-
-func TestMustLoadPanicsOnInvalidConfig(t *testing.T) {
-	t.Setenv("CONFIG_FILE", filepath.Join(t.TempDir(), "missing.yaml"))
-	defer func() {
-		if recover() == nil {
-			t.Fatal("MustLoad did not panic")
-		}
-	}()
-
-	MustLoad()
-}

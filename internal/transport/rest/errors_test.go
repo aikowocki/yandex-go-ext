@@ -9,6 +9,9 @@ import (
 	"github.com/aikowocki/yandex-go-ext/internal/domain"
 	"github.com/aikowocki/yandex-go-ext/internal/transport/rest/dto"
 	"github.com/labstack/echo/v4"
+
+	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
+	"github.com/aikowocki/yandex-go-ext/internal/shared/testsupport"
 )
 
 func TestRespondError(t *testing.T) {
@@ -55,3 +58,29 @@ func TestRespondError(t *testing.T) {
 type assertAnError struct{}
 
 func (assertAnError) Error() string { return "unexpected failure" }
+
+func TestRespondErrorLogsUnknownErrorWithoutExposingDetails(t *testing.T) {
+	e := echo.New()
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(testsupport.Context(t))
+	ctx := e.NewContext(request, recorder)
+	internalErr := assertAnError{}
+
+	if err := respondError(ctx, internalErr); err != nil {
+		t.Fatalf("respondError() error = %v", err)
+	}
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
+	}
+	var response dto.ErrorResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error != "internal server error" || response.Details != "" {
+		t.Fatalf("response exposed internal details: %+v", response)
+	}
+	testsupport.Assert(t).
+		Contains("internal server error").
+		HasLevel(logging.ErrorLevel).
+		HasField("error", internalErr)
+}

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/aikowocki/yandex-go-ext/internal/domain"
+	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 	"github.com/aikowocki/yandex-go-ext/internal/transport/rest/dto"
 	"github.com/labstack/echo/v4"
 )
@@ -34,6 +35,8 @@ func respondError(c echo.Context, err error) error {
 	case errors.Is(err, domain.ErrAlreadyExists), errors.Is(err, domain.ErrConflict):
 		status = http.StatusConflict
 		response.Error = err.Error()
+	default:
+		logging.Error(c.Request().Context(), "internal server error", logging.Err(err))
 	}
 	return c.JSON(status, response)
 }

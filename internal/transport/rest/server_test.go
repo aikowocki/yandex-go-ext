@@ -166,8 +166,14 @@ type handlerPublisherStub struct{}
 
 func (handlerPublisherStub) Publish(context.Context, string, *contracts.Message) error { return nil }
 
+type handlerTxStub struct{}
+
+func (handlerTxStub) Do(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
 func newHandlerForTest(repo *handlerAvatarRepoStub, thumbnails *handlerThumbnailRepoStub, storage *handlerStorageStub) *avatarHandler {
-	uc := avatarusecase.New(repo, thumbnails, storage, handlerPublisherStub{}, imageprocessor.NewProcessor(), nil)
+	uc := avatarusecase.New(repo, thumbnails, storage, handlerPublisherStub{}, imageprocessor.NewProcessor(), nil, nil, handlerTxStub{})
 	return &avatarHandler{avatar: uc, thumbnails: thumbnails, storage: storage}
 }
 

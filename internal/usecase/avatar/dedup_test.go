@@ -46,7 +46,7 @@ func TestCreateReusesReadySourceBlob(t *testing.T) {
 		CreatedAt:     time.Now().UTC(),
 	}
 	storage := &storageStub{}
-	useCase := New(&avatarRepoStub{}, nil, storage, &publisherStub{}, imageprocessor.NewProcessor(), nil, &blobRepoStub{blob: blob})
+	useCase := New(&avatarRepoStub{}, nil, storage, &publisherStub{}, imageprocessor.NewProcessor(), nil, &blobRepoStub{blob: blob}, passthroughTx{})
 
 	avatar, err := useCase.Create(context.Background(), "user-1", multipartFileHeader(t, content))
 	if err != nil {
@@ -101,7 +101,7 @@ func TestCreateReactivatesExistingSoftDeletedAvatar(t *testing.T) {
 		DeletedAt:        &deletedAt,
 	}}
 	storage := &storageStub{}
-	useCase := New(repo, nil, storage, &publisherStub{}, imageprocessor.NewProcessor(), nil, &blobRepoStub{blob: blob})
+	useCase := New(repo, nil, storage, &publisherStub{}, imageprocessor.NewProcessor(), nil, &blobRepoStub{blob: blob}, passthroughTx{})
 
 	avatar, err := useCase.Create(context.Background(), "user-1", multipartFileHeader(t, content))
 	if err != nil {

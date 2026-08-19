@@ -32,6 +32,7 @@ type Worker struct {
 	publisher     contracts.Publisher
 	outbox        contracts.OutboxRepository
 	blobRepo      contracts.BlobRepository
+	tx            contracts.TxManager
 }
 
 // NewWorker создаёт worker обработки avatar.
@@ -41,6 +42,7 @@ func NewWorker(
 	storage contracts.ObjectStorage,
 	processor contracts.ImageProcessor,
 	broker contracts.Consumer,
+	tx contracts.TxManager,
 	dependencies ...any,
 ) *Worker {
 	worker := &Worker{
@@ -49,6 +51,7 @@ func NewWorker(
 		storage:       storage,
 		processor:     processor,
 		broker:        broker,
+		tx:            tx,
 	}
 	for _, dependency := range dependencies {
 		switch value := dependency.(type) {
@@ -328,12 +331,17 @@ func (w *Worker) dispatchOutbox(ctx context.Context) {
 }
 
 func (w *Worker) flushOutbox(ctx context.Context) {
-	events, err := w.outbox.ClaimPending(ctx, 100, 2*time.Minute)
+	var outboxEvents []*contracts.OutboxEvent
+	err := w.tx.Do(ctx, func(txctx context.Context) error {
+		var err error
+		outboxEvents, err = w.outbox.ClaimPending(txctx, 100, 2*time.Minute)
+		return err
+	})
 	if err != nil {
-		logging.Warn(ctx, "failed to list pending outbox events", logging.Err(err))
+		logging.Warn(ctx, "failed to claim pending outbox events", logging.Err(err))
 		return
 	}
-	for _, event := range events {
+	for _, event := range outboxEvents {
 
 		message := contracts.NewMessageWithID(event.ID, event.Topic, event.Payload)
 		if err := w.publisher.Publish(ctx, event.Topic, message); err != nil {

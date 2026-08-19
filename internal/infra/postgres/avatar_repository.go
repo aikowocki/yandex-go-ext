@@ -2,32 +2,23 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/aikowocki/yandex-go-ext/internal/domain"
 	"github.com/aikowocki/yandex-go-ext/internal/infra/postgres/gen"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // AvatarRepository сохраняет avatar в PostgreSQL.
 type AvatarRepository struct {
-	queries gen.Querier
-	db      *pgxpool.Pool
+	baseRepo
 }
 
 // NewAvatarRepository создаёт репозиторий avatar.
-func NewAvatarRepository(queries gen.Querier, pools ...*pgxpool.Pool) *AvatarRepository {
-	var db *pgxpool.Pool
-	if len(pools) > 0 {
-		db = pools[0]
-	}
-	return &AvatarRepository{queries: queries, db: db}
+func NewAvatarRepository(db *DB) *AvatarRepository {
+	return &AvatarRepository{baseRepo: baseRepo{db: db}}
 }
 
 // Create сохраняет avatar.
@@ -52,7 +43,7 @@ func (r *AvatarRepository) Create(ctx context.Context, avatar *domain.Avatar) er
 		avatar.UpdatedAt = avatar.CreatedAt
 	}
 
-	created, err := r.queries.CreateAvatar(ctx, gen.CreateAvatarParams{
+	created, err := r.q(ctx).CreateAvatar(ctx, gen.CreateAvatarParams{
 		ID:                  toPGUUID(avatar.ID),
 		UserID:              avatar.UserID,
 		FileName:            avatar.FileName,
@@ -84,7 +75,7 @@ func (r *AvatarRepository) Create(ctx context.Context, avatar *domain.Avatar) er
 
 // GetByID возвращает avatar по идентификатору.
 func (r *AvatarRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Avatar, error) {
-	avatar, err := r.queries.GetAvatarByID(ctx, toPGUUID(id))
+	avatar, err := r.q(ctx).GetAvatarByID(ctx, toPGUUID(id))
 	if err != nil {
 		return nil, mapDatabaseError("get avatar", err)
 	}
@@ -94,7 +85,7 @@ func (r *AvatarRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.A
 
 // GetByUserID возвращает avatar пользователя.
 func (r *AvatarRepository) GetByUserID(ctx context.Context, userID string) (*domain.Avatar, error) {
-	avatar, err := r.queries.GetAvatarByUserID(ctx, userID)
+	avatar, err := r.q(ctx).GetAvatarByUserID(ctx, userID)
 	if err != nil {
 		return nil, mapDatabaseError("get avatar by user", err)
 	}
@@ -104,14 +95,14 @@ func (r *AvatarRepository) GetByUserID(ctx context.Context, userID string) (*dom
 
 // FindByUserAndSourceBlobID ищет avatar по исходному blob-у.
 func (r *AvatarRepository) FindByUserAndSourceBlobID(ctx context.Context, userID string, sourceBlobID uuid.UUID) (*domain.Avatar, error) {
-	if r == nil || r.queries == nil {
+	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("find avatar by source blob: repository is not configured")
 	}
 	if userID == "" || sourceBlobID == uuid.Nil {
 		return nil, fmt.Errorf("find avatar by source blob: %w", domain.ErrInvalidInput)
 	}
 
-	avatar, err := r.queries.FindAvatarByUserAndSourceBlobID(ctx, gen.FindAvatarByUserAndSourceBlobIDParams{
+	avatar, err := r.q(ctx).FindAvatarByUserAndSourceBlobID(ctx, gen.FindAvatarByUserAndSourceBlobIDParams{
 		UserID:       userID,
 		SourceBlobID: toPGUUID(sourceBlobID),
 	})
@@ -131,13 +122,7 @@ func (r *AvatarRepository) Activate(ctx context.Context, userID string, avatarID
 		return fmt.Errorf("activate avatar: %w", domain.ErrInvalidInput)
 	}
 
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("activate avatar: begin transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	queries := gen.New(tx)
+	queries := r.q(ctx)
 	if err := queries.DeactivateCompetingAvatars(ctx, gen.DeactivateCompetingAvatarsParams{
 		UserID: userID,
 		ID:     toPGUUID(avatarID),
@@ -157,9 +142,6 @@ func (r *AvatarRepository) Activate(ctx context.Context, userID string, avatarID
 	if err := queries.RestoreAvatarThumbnails(ctx, toPGUUID(avatarID)); err != nil {
 		return mapDatabaseError("restore avatar thumbnails", err)
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("activate avatar: commit transaction: %w", err)
-	}
 	return nil
 }
 
@@ -168,7 +150,7 @@ func (r *AvatarRepository) ClaimForProcessing(ctx context.Context, id uuid.UUID)
 	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("claim avatar for processing: database pool is not configured")
 	}
-	avatar, err := gen.New(r.db).ClaimAvatarForProcessing(ctx, toPGUUID(id))
+	avatar, err := r.q(ctx).ClaimAvatarForProcessing(ctx, toPGUUID(id))
 	if err != nil {
 		return nil, mapDatabaseError("claim avatar for processing", err)
 	}
@@ -179,7 +161,7 @@ func (r *AvatarRepository) ClaimForProcessing(ctx context.Context, id uuid.UUID)
 // ListByUserID возвращает avatar пользователя постранично.
 func (r *AvatarRepository) ListByUserID(ctx context.Context, userID string, limit, offset int) ([]*domain.Avatar, error) {
 	limit, offset = normalizePagination(limit, offset)
-	avatars, err := r.queries.ListAvatarsByUserID(ctx, gen.ListAvatarsByUserIDParams{
+	avatars, err := r.q(ctx).ListAvatarsByUserID(ctx, gen.ListAvatarsByUserIDParams{
 		UserID: userID,
 		Limit:  int32(limit),
 		Offset: int32(offset),
@@ -203,7 +185,7 @@ func (r *AvatarRepository) Update(ctx context.Context, avatar *domain.Avatar) er
 	if avatar.UpdatedAt.IsZero() {
 		avatar.UpdatedAt = time.Now().UTC()
 	}
-	updated, err := r.queries.UpdateAvatar(ctx, gen.UpdateAvatarParams{
+	updated, err := r.q(ctx).UpdateAvatar(ctx, gen.UpdateAvatarParams{
 		ID:                  toPGUUID(avatar.ID),
 		UserID:              avatar.UserID,
 		FileName:            avatar.FileName,
@@ -234,7 +216,7 @@ func (r *AvatarRepository) Update(ctx context.Context, avatar *domain.Avatar) er
 // Delete помечает avatar удалённым.
 func (r *AvatarRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	now := time.Now().UTC()
-	result, err := r.queries.SoftDeleteAvatar(ctx, gen.SoftDeleteAvatarParams{ID: toPGUUID(id), DeletedAt: toPGTime(&now)})
+	result, err := r.q(ctx).SoftDeleteAvatar(ctx, gen.SoftDeleteAvatarParams{ID: toPGUUID(id), DeletedAt: toPGTime(&now)})
 	if err != nil {
 		return mapDatabaseError("delete avatar", err)
 	}
@@ -246,10 +228,10 @@ func (r *AvatarRepository) Delete(ctx context.Context, id uuid.UUID) error {
 
 // HardDeleteExpired удаляет avatar старше указанного срока.
 func (r *AvatarRepository) HardDeleteExpired(ctx context.Context, deletedBefore time.Time) (int64, error) {
-	if r == nil || r.queries == nil {
+	if r == nil || r.db == nil {
 		return 0, fmt.Errorf("hard delete expired avatars: repository is not configured")
 	}
-	result, err := r.queries.HardDeleteExpiredAvatars(ctx, toPGTime(&deletedBefore))
+	result, err := r.q(ctx).HardDeleteExpiredAvatars(ctx, toPGTime(&deletedBefore))
 	if err != nil {
 		return 0, mapDatabaseError("hard delete expired avatars", err)
 	}
@@ -261,7 +243,7 @@ func (r *AvatarRepository) GetPendingForProcessing(ctx context.Context, limit in
 	if limit <= 0 {
 		limit = 100
 	}
-	avatars, err := r.queries.GetPendingAvatars(ctx, gen.GetPendingAvatarsParams{
+	avatars, err := r.q(ctx).GetPendingAvatars(ctx, gen.GetPendingAvatarsParams{
 		UploadStatus:     string(domain.UploadStatusCompleted),
 		ProcessingStatus: string(domain.ProcessingStatusPending),
 		Limit:            int32(limit),
@@ -280,7 +262,7 @@ func (r *AvatarRepository) GetPendingForProcessing(ctx context.Context, limit in
 // UpdateProcessingStatus меняет статус обработки avatar.
 func (r *AvatarRepository) UpdateProcessingStatus(ctx context.Context, id uuid.UUID, status domain.ProcessingStatus) error {
 	now := time.Now().UTC()
-	result, err := r.queries.UpdateProcessingStatus(ctx, gen.UpdateProcessingStatusParams{
+	result, err := r.q(ctx).UpdateProcessingStatus(ctx, gen.UpdateProcessingStatusParams{
 		ID:               toPGUUID(id),
 		ProcessingStatus: string(status),
 		UpdatedAt:        toPGTime(&now),
@@ -357,11 +339,10 @@ func normalizePagination(limit, offset int) (int, int) {
 }
 
 func mapDatabaseError(operation string, err error) error {
-	if errors.Is(err, pgx.ErrNoRows) {
+	if isNoRows(err) {
 		return domain.ErrNotFound
 	}
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+	if _, ok := uniqueViolation(err); ok {
 		return fmt.Errorf("%s: %w", operation, domain.ErrAlreadyExists)
 	}
 	return fmt.Errorf("%s: %w", operation, err)

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/aikowocki/yandex-go-ext/internal/config"
+	"github.com/minio/minio-go/v7"
 )
 
 func TestValidateConfig(t *testing.T) {
@@ -28,6 +29,27 @@ func TestValidateConfig(t *testing.T) {
 			}
 			if !tt.valid && err == nil {
 				t.Fatal("validateConfig() accepted invalid config")
+			}
+		})
+	}
+}
+
+func TestIsBucketAlreadyOwned(t *testing.T) {
+	tests := []struct {
+		name string
+		code string
+		want bool
+	}{
+		{name: "owned by current account", code: "BucketAlreadyOwnedByYou", want: true},
+		{name: "owned by another account", code: "BucketAlreadyExists", want: false},
+		{name: "other error", code: "AccessDenied", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isBucketAlreadyOwned(minio.ErrorResponse{Code: tt.code})
+			if got != tt.want {
+				t.Fatalf("isBucketAlreadyOwned() = %v, want %v", got, tt.want)
 			}
 		})
 	}

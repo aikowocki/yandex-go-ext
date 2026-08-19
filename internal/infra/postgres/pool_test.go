@@ -21,8 +21,8 @@ func TestNewPoolRejectsInvalidDSNAndCancelledPing(t *testing.T) {
 	}
 }
 
-func TestMigrationsRejectNilDatabase(t *testing.T) {
-	if err := migrations.Up(context.Background(), nil); err == nil {
-		t.Fatal("nil database accepted")
+func TestMigrationsRejectEmptyDSN(t *testing.T) {
+	if err := migrations.Up(""); err == nil {
+		t.Fatal("empty database DSN accepted")
 	}
 }

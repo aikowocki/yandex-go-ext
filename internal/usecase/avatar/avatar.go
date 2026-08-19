@@ -30,6 +30,7 @@ type UseCase struct {
 	processor     contracts.ImageProcessor
 	outbox        contracts.OutboxRepository
 	blobRepo      contracts.BlobRepository
+	tx            contracts.TxManager
 }
 
 // New создаёт use case для работы с avatar.
@@ -40,22 +41,19 @@ func New(
 	broker contracts.Publisher,
 	processor contracts.ImageProcessor,
 	outbox contracts.OutboxRepository,
-	dependencies ...any,
+	blobRepo contracts.BlobRepository,
+	tx contracts.TxManager,
 ) *UseCase {
-	useCase := &UseCase{
+	return &UseCase{
 		avatarRepo:    avatarRepo,
 		thumbnailRepo: thumbnailRepo,
 		storage:       storage,
 		broker:        broker,
 		processor:     processor,
 		outbox:        outbox,
+		blobRepo:      blobRepo,
+		tx:            tx,
 	}
-	for _, dependency := range dependencies {
-		if blobRepo, ok := dependency.(contracts.BlobRepository); ok {
-			useCase.blobRepo = blobRepo
-		}
-	}
-	return useCase
 }
 
 // Create загружает файл и создаёт avatar пользователя.
@@ -142,20 +140,25 @@ func (uc *UseCase) Create(ctx context.Context, userID string, file *multipart.Fi
 				return nil, fmt.Errorf("find existing avatar: %w", findErr)
 			}
 			if existing != nil && existing.UploadStatus == domain.UploadStatusCompleted && sourceBlob.IsReady() {
-				if err := avatarDedup.Activate(ctx, userID, existing.ID); err != nil {
-					return nil, fmt.Errorf("reactivate existing avatar: %w", err)
-				}
-				existing.DeletedAt = nil
-				existing.IsActive = true
-				existing.CropX = crop.X
-				existing.CropY = crop.Y
-				existing.CropSize = crop.Size
-				existing.ProcessingStatus = domain.ProcessingStatusPending
-				existing.ProcessingStartedAt = nil
-				existing.LastError = ""
-				existing.UpdatedAt = time.Now().UTC()
-				if err := uc.avatarRepo.Update(ctx, existing); err != nil {
-					return nil, fmt.Errorf("update existing avatar crop: %w", err)
+				if err := uc.tx.Do(ctx, func(txctx context.Context) error {
+					if err := avatarDedup.Activate(txctx, userID, existing.ID); err != nil {
+						return fmt.Errorf("reactivate existing avatar: %w", err)
+					}
+					existing.DeletedAt = nil
+					existing.IsActive = true
+					existing.CropX = crop.X
+					existing.CropY = crop.Y
+					existing.CropSize = crop.Size
+					existing.ProcessingStatus = domain.ProcessingStatusPending
+					existing.ProcessingStartedAt = nil
+					existing.LastError = ""
+					existing.UpdatedAt = time.Now().UTC()
+					if err := uc.avatarRepo.Update(txctx, existing); err != nil {
+						return fmt.Errorf("update existing avatar crop: %w", err)
+					}
+					return nil
+				}); err != nil {
+					return nil, err
 				}
 				if err := uc.publishUploadedEvent(ctx, existing); err != nil {
 					return nil, fmt.Errorf("queue existing avatar processing: %w", err)
@@ -216,7 +219,7 @@ func (uc *UseCase) Create(ctx context.Context, userID string, file *multipart.Fi
 	}
 
 	avatar.UploadStatus = domain.UploadStatusCompleted
-	if err := uc.avatarRepo.Update(ctx, avatar); err != nil {
+	cleanupUploadedOriginal := func() {
 		if sourceBlob == nil {
 			if deleteErr := uc.storage.Delete(ctx, avatar.S3KeyOriginal); deleteErr != nil {
 				logging.Warn(ctx, "failed to clean up uploaded original", logging.Err(deleteErr), logging.UUID("avatar_id", avatar.ID))
@@ -224,14 +227,24 @@ func (uc *UseCase) Create(ctx context.Context, userID string, file *multipart.Fi
 		} else {
 			logging.Warn(ctx, "leaving shared source blob for reconciliation", logging.UUID("avatar_id", avatar.ID), logging.UUID("blob_id", sourceBlob.ID))
 		}
-		return nil, fmt.Errorf("mark avatar uploaded: %w", err)
 	}
-
 	if avatarDedup != nil {
-		if err := avatarDedup.Activate(ctx, userID, avatar.ID); err != nil {
-			return nil, fmt.Errorf("activate uploaded avatar: %w", err)
+		if err := uc.tx.Do(ctx, func(txctx context.Context) error {
+			if err := uc.avatarRepo.Update(txctx, avatar); err != nil {
+				return fmt.Errorf("mark avatar uploaded: %w", err)
+			}
+			if err := avatarDedup.Activate(txctx, userID, avatar.ID); err != nil {
+				return fmt.Errorf("activate uploaded avatar: %w", err)
+			}
+			return nil
+		}); err != nil {
+			cleanupUploadedOriginal()
+			return nil, err
 		}
 		avatar.IsActive = true
+	} else if err := uc.avatarRepo.Update(ctx, avatar); err != nil {
+		cleanupUploadedOriginal()
+		return nil, fmt.Errorf("mark avatar uploaded: %w", err)
 	}
 
 	if err := uc.publishUploadedEvent(ctx, avatar); err != nil {
@@ -260,21 +273,26 @@ func (uc *UseCase) UpdateCrop(ctx context.Context, userID string, id uuid.UUID, 
 		return nil, fmt.Errorf("validate crop: %w", err)
 	}
 
-	if avatarDedup, ok := uc.avatarRepo.(contracts.AvatarDedupRepository); ok {
-		if err := avatarDedup.Activate(ctx, userID, id); err != nil {
-			return nil, fmt.Errorf("activate edited avatar: %w", err)
+	if err := uc.tx.Do(ctx, func(txctx context.Context) error {
+		if avatarDedup, ok := uc.avatarRepo.(contracts.AvatarDedupRepository); ok {
+			if err := avatarDedup.Activate(txctx, userID, id); err != nil {
+				return fmt.Errorf("activate edited avatar: %w", err)
+			}
+			avatar.IsActive = true
 		}
-		avatar.IsActive = true
-	}
-	avatar.CropX = crop.X
-	avatar.CropY = crop.Y
-	avatar.CropSize = crop.Size
-	avatar.ProcessingStatus = domain.ProcessingStatusPending
-	avatar.ProcessingStartedAt = nil
-	avatar.LastError = ""
-	avatar.UpdatedAt = time.Now().UTC()
-	if err := uc.avatarRepo.Update(ctx, avatar); err != nil {
-		return nil, fmt.Errorf("update avatar crop: %w", err)
+		avatar.CropX = crop.X
+		avatar.CropY = crop.Y
+		avatar.CropSize = crop.Size
+		avatar.ProcessingStatus = domain.ProcessingStatusPending
+		avatar.ProcessingStartedAt = nil
+		avatar.LastError = ""
+		avatar.UpdatedAt = time.Now().UTC()
+		if err := uc.avatarRepo.Update(txctx, avatar); err != nil {
+			return fmt.Errorf("update avatar crop: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	if err := uc.publishUploadedEvent(ctx, avatar); err != nil {
 		return nil, fmt.Errorf("queue avatar crop processing: %w", err)
@@ -329,29 +347,36 @@ func (uc *UseCase) Delete(ctx context.Context, userID string, id uuid.UUID) erro
 		thumbnailKeys = append(thumbnailKeys, thumbnail.S3Key)
 	}
 
-	if err := uc.avatarRepo.Delete(ctx, id); err != nil {
-		return fmt.Errorf("delete avatar metadata: %w", err)
-	}
-	if err := uc.thumbnailRepo.DeleteByAvatarID(ctx, id); err != nil {
-		return fmt.Errorf("delete thumbnail metadata: %w", err)
-	}
+	if err := uc.tx.Do(ctx, func(txctx context.Context) error {
+		if err := uc.avatarRepo.Delete(txctx, id); err != nil {
+			return fmt.Errorf("delete avatar metadata: %w", err)
+		}
+		if err := uc.thumbnailRepo.DeleteByAvatarID(txctx, id); err != nil {
+			return fmt.Errorf("delete thumbnail metadata: %w", err)
+		}
 
-	if wasActive {
-		remaining, err := uc.avatarRepo.ListByUserID(ctx, userID, 1, 0)
+		if !wasActive {
+			return nil
+		}
+		remaining, err := uc.avatarRepo.ListByUserID(txctx, userID, 1, 0)
 		if err != nil {
 			return fmt.Errorf("find fallback avatar: %w", err)
 		}
-		if len(remaining) > 0 {
-			fallback := remaining[0]
-			fallback.IsActive = true
-			if avatarDedup, ok := uc.avatarRepo.(contracts.AvatarDedupRepository); ok {
-				if err := avatarDedup.Activate(ctx, userID, fallback.ID); err != nil {
-					return fmt.Errorf("activate fallback avatar: %w", err)
-				}
-			} else if err := uc.avatarRepo.Update(ctx, fallback); err != nil {
+		if len(remaining) == 0 {
+			return nil
+		}
+		fallback := remaining[0]
+		fallback.IsActive = true
+		if avatarDedup, ok := uc.avatarRepo.(contracts.AvatarDedupRepository); ok {
+			if err := avatarDedup.Activate(txctx, userID, fallback.ID); err != nil {
 				return fmt.Errorf("activate fallback avatar: %w", err)
 			}
+		} else if err := uc.avatarRepo.Update(txctx, fallback); err != nil {
+			return fmt.Errorf("activate fallback avatar: %w", err)
 		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("delete avatar metadata transaction: %w", err)
 	}
 
 	event := events.NewAvatarDeletedEvent(avatar, thumbnailKeys)

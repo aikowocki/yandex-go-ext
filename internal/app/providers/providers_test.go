@@ -8,6 +8,7 @@ import (
 
 	"github.com/aikowocki/yandex-go-ext/internal/app/providers/components"
 	"github.com/aikowocki/yandex-go-ext/internal/config"
+	"github.com/aikowocki/yandex-go-ext/internal/infra/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -63,7 +64,7 @@ func TestProviderFactoryBranches(t *testing.T) {
 	if _, err := NewObjectStore(context.Background(), &config.Config{}); err == nil {
 		t.Fatal("empty object storage config accepted")
 	}
-	server, err := NewREST(&config.Config{Server: config.ServerConfig{RateLimitPerSecond: 1, RateLimitBurst: 1}}, &components.Avatar{DB: &pgxpool.Pool{}})
+	server, err := NewREST(&config.Config{Server: config.ServerConfig{RateLimitPerSecond: 1, RateLimitBurst: 1}}, &components.Avatar{DB: &postgres.DB{Pool: &pgxpool.Pool{}}})
 	if err != nil || server == nil {
 		t.Fatalf("NewREST() = %v, %v", server, err)
 	}
@@ -87,7 +88,7 @@ func TestNewBrokerDelegatesToBrokerFactory(t *testing.T) {
 
 func TestNewRESTRejectsInvalidServerConfig(t *testing.T) {
 	cfg := &config.Config{Server: config.ServerConfig{RateLimitPerSecond: 0, RateLimitBurst: 1}}
-	avatarComponents := &components.Avatar{DB: &pgxpool.Pool{}}
+	avatarComponents := &components.Avatar{DB: &postgres.DB{Pool: &pgxpool.Pool{}}}
 	if _, err := NewREST(cfg, avatarComponents); err == nil {
 		t.Fatal("NewREST accepted invalid server config")
 	}

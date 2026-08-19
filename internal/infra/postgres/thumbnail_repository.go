@@ -12,12 +12,12 @@ import (
 
 // ThumbnailRepository сохраняет миниатюры в PostgreSQL.
 type ThumbnailRepository struct {
-	queries gen.Querier
+	baseRepo
 }
 
 // NewThumbnailRepository создаёт репозиторий миниатюр.
-func NewThumbnailRepository(queries gen.Querier) *ThumbnailRepository {
-	return &ThumbnailRepository{queries: queries}
+func NewThumbnailRepository(db *DB) *ThumbnailRepository {
+	return &ThumbnailRepository{baseRepo: baseRepo{db: db}}
 }
 
 // Create сохраняет миниатюру.
@@ -31,7 +31,7 @@ func (r *ThumbnailRepository) Create(ctx context.Context, thumbnail *domain.Thum
 	if thumbnail.CreatedAt.IsZero() {
 		thumbnail.CreatedAt = time.Now().UTC()
 	}
-	created, err := r.queries.CreateThumbnail(ctx, gen.CreateThumbnailParams{
+	created, err := r.q(ctx).CreateThumbnail(ctx, gen.CreateThumbnailParams{
 		ID:           toPGUUID(thumbnail.ID),
 		AvatarID:     toPGUUID(thumbnail.AvatarID),
 		Size:         string(thumbnail.Size),
@@ -52,7 +52,7 @@ func (r *ThumbnailRepository) Create(ctx context.Context, thumbnail *domain.Thum
 
 // ListByAvatarID возвращает миниатюры avatar.
 func (r *ThumbnailRepository) ListByAvatarID(ctx context.Context, avatarID uuid.UUID) ([]*domain.Thumbnail, error) {
-	thumbnails, err := r.queries.ListThumbnailsByAvatarID(ctx, toPGUUID(avatarID))
+	thumbnails, err := r.q(ctx).ListThumbnailsByAvatarID(ctx, toPGUUID(avatarID))
 	if err != nil {
 		return nil, mapDatabaseError("list thumbnails", err)
 	}
@@ -66,7 +66,7 @@ func (r *ThumbnailRepository) ListByAvatarID(ctx context.Context, avatarID uuid.
 
 // DeleteByAvatarID удаляет миниатюры avatar.
 func (r *ThumbnailRepository) DeleteByAvatarID(ctx context.Context, avatarID uuid.UUID) error {
-	if err := r.queries.DeleteThumbnailsByAvatarID(ctx, toPGUUID(avatarID)); err != nil {
+	if err := r.q(ctx).DeleteThumbnailsByAvatarID(ctx, toPGUUID(avatarID)); err != nil {
 		return mapDatabaseError("delete thumbnails", err)
 	}
 	return nil
@@ -74,7 +74,7 @@ func (r *ThumbnailRepository) DeleteByAvatarID(ctx context.Context, avatarID uui
 
 // HardDeleteExpired удаляет старые миниатюры.
 func (r *ThumbnailRepository) HardDeleteExpired(ctx context.Context, deletedBefore time.Time) (int64, error) {
-	result, err := r.queries.HardDeleteExpiredThumbnails(ctx, toPGTime(&deletedBefore))
+	result, err := r.q(ctx).HardDeleteExpiredThumbnails(ctx, toPGTime(&deletedBefore))
 	if err != nil {
 		return 0, mapDatabaseError("hard delete expired thumbnails", err)
 	}

@@ -5,16 +5,14 @@ import (
 
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
 	"github.com/aikowocki/yandex-go-ext/internal/infra/postgres"
-	"github.com/aikowocki/yandex-go-ext/internal/infra/postgres/gen"
 	avatarusecase "github.com/aikowocki/yandex-go-ext/internal/usecase/avatar"
 	imageprocessor "github.com/aikowocki/yandex-go-ext/internal/usecase/image"
 	"github.com/aikowocki/yandex-go-ext/internal/worker"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Avatar объединяет зависимости avatar-подсистемы.
 type Avatar struct {
-	DB            *pgxpool.Pool
+	DB            *postgres.DB
 	Avatar        *avatarusecase.UseCase
 	AvatarRepo    contracts.AvatarRepository
 	ThumbnailRepo contracts.ThumbnailRepository
@@ -27,7 +25,7 @@ type Avatar struct {
 }
 
 // NewAvatar собирает зависимости avatar-подсистемы.
-func NewAvatar(db *pgxpool.Pool, storage contracts.ObjectStorage, messageBroker contracts.MessageBroker) (*Avatar, error) {
+func NewAvatar(db *postgres.DB, storage contracts.ObjectStorage, messageBroker contracts.MessageBroker) (*Avatar, error) {
 	if db == nil {
 		return nil, fmt.Errorf("database is nil")
 	}
@@ -38,13 +36,13 @@ func NewAvatar(db *pgxpool.Pool, storage contracts.ObjectStorage, messageBroker 
 		return nil, fmt.Errorf("message broker is nil")
 	}
 
-	queries := gen.New(db)
-	avatarRepo := postgres.NewAvatarRepository(queries, db)
-	thumbnailRepo := postgres.NewThumbnailRepository(queries)
+	avatarRepo := postgres.NewAvatarRepository(db)
+	thumbnailRepo := postgres.NewThumbnailRepository(db)
 	blobRepo := postgres.NewBlobRepository(db)
 	outboxRepo := postgres.NewOutboxRepository(db)
 	processor := imageprocessor.NewProcessor()
-	avatarUseCase := avatarusecase.New(avatarRepo, thumbnailRepo, storage, messageBroker, processor, outboxRepo, blobRepo)
+	txManager := postgres.NewTxManager(db)
+	avatarUseCase := avatarusecase.New(avatarRepo, thumbnailRepo, storage, messageBroker, processor, outboxRepo, blobRepo, txManager)
 
 	return &Avatar{
 		DB:            db,
@@ -56,6 +54,6 @@ func NewAvatar(db *pgxpool.Pool, storage contracts.ObjectStorage, messageBroker 
 		Processor:     processor,
 		Broker:        messageBroker,
 		Outbox:        outboxRepo,
-		Worker:        worker.NewWorker(avatarRepo, thumbnailRepo, storage, processor, messageBroker, messageBroker, outboxRepo, blobRepo),
+		Worker:        worker.NewWorker(avatarRepo, thumbnailRepo, storage, processor, messageBroker, txManager, messageBroker, outboxRepo, blobRepo),
 	}, nil
 }

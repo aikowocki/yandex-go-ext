@@ -7,11 +7,10 @@ import (
 	"github.com/aikowocki/yandex-go-ext/internal/config"
 	"github.com/aikowocki/yandex-go-ext/internal/infra/postgres"
 	"github.com/aikowocki/yandex-go-ext/internal/infra/postgres/migrations"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // NewDatabase открывает пул PostgreSQL и применяет ожидающие миграции.
-func NewDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
+func NewDatabase(ctx context.Context, cfg *config.Config) (*postgres.DB, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
@@ -20,7 +19,7 @@ func NewDatabase(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error)
 	if err != nil {
 		return nil, err
 	}
-	if err := migrations.Up(ctx, db); err != nil {
+	if err := migrations.Up(cfg.Database.DSN); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("run database migrations: %w", err)
 	}

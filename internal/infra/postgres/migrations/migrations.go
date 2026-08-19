@@ -1,72 +1,54 @@
 package migrations
 
 import (
-	"context"
+	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
-	"io/fs"
-	"sort"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/golang-migrate/migrate/v4"
+	postgresdriver "github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-//go:embed *.up.sql
-var files embed.FS
+//go:embed *.sql
+var migrationsFS embed.FS
 
-// Up применяет ещё не выполненные миграции.
-func Up(ctx context.Context, db *pgxpool.Pool) error {
-	if db == nil {
-		return fmt.Errorf("database is nil")
+// Up применяет embedded migrations через golang-migrate.
+func Up(dsn string) error {
+	if strings.TrimSpace(dsn) == "" {
+		return fmt.Errorf("database dsn is empty")
 	}
 
-	names, err := fs.Glob(files, "*.up.sql")
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
-		return fmt.Errorf("discover migrations: %w", err)
+		return fmt.Errorf("open database for migrations: %w", err)
 	}
-	sort.Strings(names)
+	defer func() { _ = db.Close() }()
 
-	tx, err := db.Begin(ctx)
+	if err := db.Ping(); err != nil {
+		return fmt.Errorf("ping database for migrations: %w", err)
+	}
+	driver, err := postgresdriver.WithInstance(db, &postgresdriver.Config{})
 	if err != nil {
-		return fmt.Errorf("begin migration transaction: %w", err)
+		return fmt.Errorf("create migration driver: %w", err)
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('gophprofile:migrations'))`); err != nil {
-		return fmt.Errorf("lock migrations: %w", err)
+	source, err := iofs.New(migrationsFS, ".")
+	if err != nil {
+		return fmt.Errorf("create migration source: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS gophprofile_schema_migrations (
-			version TEXT PRIMARY KEY,
-			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		)`); err != nil {
-		return fmt.Errorf("create migration ledger: %w", err)
+	migrator, err := migrate.NewWithInstance("iofs", source, "postgres", driver)
+	if err != nil {
+		return fmt.Errorf("create migrator: %w", err)
 	}
+	defer func() {
+		_, _ = migrator.Close()
+	}()
 
-	for _, name := range names {
-		version := strings.TrimSuffix(name, ".up.sql")
-		var applied bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM gophprofile_schema_migrations WHERE version = $1)`, version).Scan(&applied); err != nil {
-			return fmt.Errorf("check migration %s: %w", version, err)
-		}
-		if applied {
-			continue
-		}
-
-		script, err := fs.ReadFile(files, name)
-		if err != nil {
-			return fmt.Errorf("read migration %s: %w", version, err)
-		}
-		if _, err := tx.Exec(ctx, string(script)); err != nil {
-			return fmt.Errorf("apply migration %s: %w", version, err)
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO gophprofile_schema_migrations (version) VALUES ($1)`, version); err != nil {
-			return fmt.Errorf("record migration %s: %w", version, err)
-		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit migrations: %w", err)
+	if err := migrator.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return fmt.Errorf("run migrations: %w", err)
 	}
 	return nil
 }

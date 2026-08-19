@@ -10,27 +10,21 @@ import (
 	"github.com/aikowocki/yandex-go-ext/internal/infra/postgres/gen"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // BlobRepository управляет blob-ами в PostgreSQL.
 type BlobRepository struct {
-	db      *pgxpool.Pool
-	queries gen.Querier
+	baseRepo
 }
 
 // NewBlobRepository создаёт репозиторий blob-ов.
-func NewBlobRepository(db *pgxpool.Pool) *BlobRepository {
-	repository := &BlobRepository{db: db}
-	if db != nil {
-		repository.queries = gen.New(db)
-	}
-	return repository
+func NewBlobRepository(db *DB) *BlobRepository {
+	return &BlobRepository{baseRepo: baseRepo{db: db}}
 }
 
 // GetOrCreate возвращает существующий или создаёт новый blob.
 func (r *BlobRepository) GetOrCreate(ctx context.Context, blob *domain.Blob) (*domain.Blob, error) {
-	if r == nil || r.queries == nil {
+	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("get or create blob: database pool is not configured")
 	}
 	if blob == nil || len(blob.SHA256) != 32 || blob.SizeBytes < 0 || blob.ObjectKey == "" {
@@ -50,7 +44,7 @@ func (r *BlobRepository) GetOrCreate(ctx context.Context, blob *domain.Blob) (*d
 		blob.UpdatedAt = blob.CreatedAt
 	}
 
-	result, err := r.queries.GetOrCreateBlob(ctx, gen.GetOrCreateBlobParams{
+	result, err := r.q(ctx).GetOrCreateBlob(ctx, gen.GetOrCreateBlobParams{
 		ID:            toPGUUID(blob.ID),
 		Sha256:        blob.SHA256,
 		SizeBytes:     blob.SizeBytes,
@@ -72,10 +66,10 @@ func (r *BlobRepository) GetOrCreate(ctx context.Context, blob *domain.Blob) (*d
 
 // MarkReady помечает blob готовым.
 func (r *BlobRepository) MarkReady(ctx context.Context, id uuid.UUID) error {
-	if r == nil || r.queries == nil {
+	if r == nil || r.db == nil {
 		return fmt.Errorf("mark blob ready: database pool is not configured")
 	}
-	result, err := r.queries.MarkBlobReady(ctx, toPGUUID(id))
+	result, err := r.q(ctx).MarkBlobReady(ctx, toPGUUID(id))
 	if err != nil {
 		return mapDatabaseError("mark blob ready", err)
 	}
@@ -87,10 +81,10 @@ func (r *BlobRepository) MarkReady(ctx context.Context, id uuid.UUID) error {
 
 // MarkFailed сохраняет ошибку обработки blob-а.
 func (r *BlobRepository) MarkFailed(ctx context.Context, id uuid.UUID, message string) error {
-	if r == nil || r.queries == nil {
+	if r == nil || r.db == nil {
 		return fmt.Errorf("mark blob failed: database pool is not configured")
 	}
-	result, err := r.queries.MarkBlobFailed(ctx, gen.MarkBlobFailedParams{ID: toPGUUID(id), LastError: message})
+	result, err := r.q(ctx).MarkBlobFailed(ctx, gen.MarkBlobFailedParams{ID: toPGUUID(id), LastError: message})
 	if err != nil {
 		return mapDatabaseError("mark blob failed", err)
 	}
@@ -102,7 +96,7 @@ func (r *BlobRepository) MarkFailed(ctx context.Context, id uuid.UUID, message s
 
 // EnsureDerivation создаёт или возвращает производный blob.
 func (r *BlobRepository) EnsureDerivation(ctx context.Context, derivation *domain.BlobDerivation) (*domain.BlobDerivation, error) {
-	if r == nil || r.queries == nil {
+	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("ensure blob derivation: database pool is not configured")
 	}
 	if derivation == nil || derivation.ParentBlobID == uuid.Nil || derivation.DerivedBlobID == uuid.Nil || !derivation.Variant.IsSupported() {
@@ -124,7 +118,7 @@ func (r *BlobRepository) EnsureDerivation(ctx context.Context, derivation *domai
 		derivation.CreatedAt = time.Now().UTC()
 	}
 
-	result, err := r.queries.EnsureBlobDerivation(ctx, gen.EnsureBlobDerivationParams{
+	result, err := r.q(ctx).EnsureBlobDerivation(ctx, gen.EnsureBlobDerivationParams{
 		ID:               toPGUUID(derivation.ID),
 		ParentBlobID:     toPGUUID(derivation.ParentBlobID),
 		DerivedBlobID:    toPGUUID(derivation.DerivedBlobID),
@@ -143,10 +137,10 @@ func (r *BlobRepository) EnsureDerivation(ctx context.Context, derivation *domai
 
 // LinkThumbnail связывает миниатюру с blob-ом.
 func (r *BlobRepository) LinkThumbnail(ctx context.Context, thumbnailID, blobID, derivationID uuid.UUID) error {
-	if r == nil || r.queries == nil {
+	if r == nil || r.db == nil {
 		return fmt.Errorf("link thumbnail blob: database pool is not configured")
 	}
-	result, err := r.queries.LinkThumbnailBlob(ctx, gen.LinkThumbnailBlobParams{
+	result, err := r.q(ctx).LinkThumbnailBlob(ctx, gen.LinkThumbnailBlobParams{
 		ID:           toPGUUID(thumbnailID),
 		BlobID:       toPGUUID(blobID),
 		DerivationID: toPGUUID(derivationID),
@@ -162,13 +156,13 @@ func (r *BlobRepository) LinkThumbnail(ctx context.Context, thumbnailID, blobID,
 
 // ListUnreferenced возвращает неиспользуемые blob-ы.
 func (r *BlobRepository) ListUnreferenced(ctx context.Context, createdBefore time.Time, limit int) ([]*domain.Blob, error) {
-	if r == nil || r.queries == nil {
+	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("list unreferenced blobs: database pool is not configured")
 	}
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := r.queries.ListUnreferencedBlobs(ctx, gen.ListUnreferencedBlobsParams{
+	rows, err := r.q(ctx).ListUnreferencedBlobs(ctx, gen.ListUnreferencedBlobsParams{
 		CreatedAt: toPGTime(&createdBefore),
 		Limit:     int32(limit),
 	})
@@ -188,31 +182,22 @@ func (r *BlobRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	if r == nil || r.db == nil {
 		return fmt.Errorf("delete blob: database pool is not configured")
 	}
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("delete blob: begin transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	queries := gen.New(tx)
+	queries := r.q(ctx)
 	if err := queries.DeleteBlobDerivations(ctx, toPGUUID(id)); err != nil {
 		return mapDatabaseError("delete blob derivations", err)
 	}
 	if err := queries.DeleteBlobRow(ctx, toPGUUID(id)); err != nil {
 		return mapDatabaseError("delete blob row", err)
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("delete blob: commit transaction: %w", err)
-	}
 	return nil
 }
 
 // HasObject проверяет наличие объекта blob-а.
 func (r *BlobRepository) HasObject(ctx context.Context, objectKey string) (bool, error) {
-	if r == nil || r.queries == nil {
+	if r == nil || r.db == nil {
 		return false, fmt.Errorf("check blob object: database pool is not configured")
 	}
-	exists, err := r.queries.HasBlobObject(ctx, objectKey)
+	exists, err := r.q(ctx).HasBlobObject(ctx, objectKey)
 	if err != nil {
 		return false, mapDatabaseError("check blob object", err)
 	}
@@ -221,10 +206,10 @@ func (r *BlobRepository) HasObject(ctx context.Context, objectKey string) (bool,
 
 // ClaimForDeletion забирает blob на удаление.
 func (r *BlobRepository) ClaimForDeletion(ctx context.Context, id uuid.UUID) (*domain.Blob, bool, error) {
-	if r == nil || r.queries == nil {
+	if r == nil || r.db == nil {
 		return nil, false, fmt.Errorf("claim blob for deletion: database pool is not configured")
 	}
-	row, err := r.queries.ClaimBlobForDeletion(ctx, toPGUUID(id))
+	row, err := r.q(ctx).ClaimBlobForDeletion(ctx, toPGUUID(id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, false, nil
 	}

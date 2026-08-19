@@ -421,6 +421,12 @@ func (s *workerBlobRepoRich) LinkThumbnail(context.Context, uuid.UUID, uuid.UUID
 	return nil
 }
 
+type passthroughTx struct{}
+
+func (passthroughTx) Do(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
 type workerOutboxStub struct {
 	events       []*contracts.OutboxEvent
 	claimErr     error
@@ -474,14 +480,14 @@ func TestCreateThumbnailWithSharedBlob(t *testing.T) {
 func TestFlushOutboxAndRetryDelay(t *testing.T) {
 	event := &contracts.OutboxEvent{ID: "event-1", Topic: "avatar.uploaded", Payload: []byte("{}"), Attempts: 1}
 	outbox := &workerOutboxStub{events: []*contracts.OutboxEvent{event}}
-	worker := &Worker{outbox: outbox, publisher: workerPublisherStub{}}
+	worker := &Worker{outbox: outbox, publisher: workerPublisherStub{}, tx: passthroughTx{}}
 	worker.flushOutbox(context.Background())
 	if !outbox.markedPub || outbox.markedFailed {
 		t.Fatalf("successful outbox event state: published=%v failed=%v", outbox.markedPub, outbox.markedFailed)
 	}
 
 	failedOutbox := &workerOutboxStub{events: []*contracts.OutboxEvent{event}}
-	failedWorker := &Worker{outbox: failedOutbox, publisher: workerPublisherStub{err: errors.New("publish")}}
+	failedWorker := &Worker{outbox: failedOutbox, publisher: workerPublisherStub{err: errors.New("publish")}, tx: passthroughTx{}}
 	failedWorker.flushOutbox(context.Background())
 	if !failedOutbox.markedFailed {
 		t.Fatal("failed publish was not marked failed")
@@ -554,7 +560,7 @@ func TestWorkerStartReturnsSubscribeError(t *testing.T) {
 func TestDispatchOutboxStopsOnCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	worker := &Worker{outbox: &workerOutboxStub{}, publisher: workerPublisherStub{}}
+	worker := &Worker{outbox: &workerOutboxStub{}, publisher: workerPublisherStub{}, tx: passthroughTx{}}
 	worker.dispatchOutbox(ctx)
 }
 

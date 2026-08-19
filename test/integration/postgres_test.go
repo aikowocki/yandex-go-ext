@@ -9,7 +9,6 @@ import (
 
 	"github.com/aikowocki/yandex-go-ext/internal/domain"
 	pginfra "github.com/aikowocki/yandex-go-ext/internal/infra/postgres"
-	"github.com/aikowocki/yandex-go-ext/internal/infra/postgres/gen"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -47,8 +46,8 @@ func TestPostgresRepositories(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	queries := gen.New(pool)
-	repo := pginfra.NewAvatarRepository(queries)
+	db := &pginfra.DB{Pool: pool}
+	repo := pginfra.NewAvatarRepository(db)
 	avatar := &domain.Avatar{
 		ID:               uuid.New(),
 		UserID:           "integration-user",

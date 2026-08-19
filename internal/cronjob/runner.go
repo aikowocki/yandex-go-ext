@@ -24,6 +24,7 @@ type Runner struct {
 	blobRetention      contracts.BlobRetentionRepository
 	storage            contracts.ObjectStorage
 	storageLister      contracts.ObjectStorageLister
+	tx                 contracts.TxManager
 	retentionPeriod    time.Duration
 	orphanGracePeriod  time.Duration
 	cleanupBatchSize   int
@@ -36,6 +37,7 @@ func New(
 	blobRetention contracts.BlobRetentionRepository,
 	storage contracts.ObjectStorage,
 	storageLister contracts.ObjectStorageLister,
+	tx contracts.TxManager,
 	cfg config.WorkerConfig,
 ) *Runner {
 	retentionPeriod := cfg.RetentionPeriod
@@ -56,6 +58,7 @@ func New(
 		blobRetention:      blobRetention,
 		storage:            storage,
 		storageLister:      storageLister,
+		tx:                 tx,
 		retentionPeriod:    retentionPeriod,
 		orphanGracePeriod:  orphanGracePeriod,
 		cleanupBatchSize:   batchSize,
@@ -115,7 +118,9 @@ func (r *Runner) RunRetention(ctx context.Context) error {
 			runErrs = append(runErrs, fmt.Errorf("delete MinIO object %q: %w", blob.ObjectKey, err))
 			continue
 		}
-		if err := r.blobRetention.Delete(ctx, blob.ID); err != nil {
+		if err := r.tx.Do(ctx, func(txctx context.Context) error {
+			return r.blobRetention.Delete(txctx, blob.ID)
+		}); err != nil {
 			runErrs = append(runErrs, fmt.Errorf("delete blob row %s: %w", blob.ID, err))
 			continue
 		}

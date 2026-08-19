@@ -11,7 +11,6 @@ import (
 	"github.com/aikowocki/yandex-go-ext/internal/app/providers"
 	"github.com/aikowocki/yandex-go-ext/internal/cronjob"
 	"github.com/aikowocki/yandex-go-ext/internal/infra/postgres"
-	"github.com/aikowocki/yandex-go-ext/internal/infra/postgres/gen"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 )
 
@@ -53,11 +52,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("open object storage: %w", err)
 	}
-	queries := gen.New(db)
-	avatarRepo := postgres.NewAvatarRepository(queries, db)
-	thumbnailRepo := postgres.NewThumbnailRepository(queries)
+	avatarRepo := postgres.NewAvatarRepository(db)
+	thumbnailRepo := postgres.NewThumbnailRepository(db)
 	blobRepo := postgres.NewBlobRepository(db)
-	runner := cronjob.New(avatarRepo, thumbnailRepo, blobRepo, storage, storage, cfg.Worker)
+	txManager := postgres.NewTxManager(db)
+	runner := cronjob.New(avatarRepo, thumbnailRepo, blobRepo, storage, storage, txManager, cfg.Worker)
 
 	switch os.Args[1] {
 	case "retention":

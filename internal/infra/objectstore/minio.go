@@ -41,11 +41,19 @@ func NewMinIO(ctx context.Context, cfg config.S3Config) (*MinIO, error) {
 	}
 	if !exists {
 		if err := client.MakeBucket(ctx, cfg.Bucket, minio.MakeBucketOptions{Region: cfg.Region}); err != nil {
-			return nil, fmt.Errorf("create storage bucket: %w", err)
+			if !isBucketAlreadyOwned(err) {
+				return nil, fmt.Errorf("create storage bucket: %w", err)
+			}
+		} else {
+			logging.Info(ctx, "created object storage bucket", logging.String("bucket", cfg.Bucket))
 		}
-		logging.Info(ctx, "created object storage bucket", logging.String("bucket", cfg.Bucket))
 	}
 	return storage, nil
+}
+
+func isBucketAlreadyOwned(err error) bool {
+	response := minio.ToErrorResponse(err)
+	return response.Code == "BucketAlreadyOwnedByYou"
 }
 
 // Upload загружает объект в MinIO.

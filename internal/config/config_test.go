@@ -5,159 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
-func validTestConfig() Config {
-	return Config{
-		Server:   ServerConfig{Host: "127.0.0.1", Port: 8080, ReadTimeout: 30e9, WriteTimeout: 30e9, MaxUploadSize: 1024, RateLimitPerSecond: 10, RateLimitBurst: 20},
-		Database: DatabaseConfig{DSN: "postgres://user:pass@localhost/db", MaxConns: 5, MinConns: 1},
-		S3:       S3Config{Endpoint: "localhost:9000", AccessKeyID: "key", SecretAccessKey: "secret", Bucket: "avatars"},
-		Broker:   BrokerConfig{Type: "rabbitmq", RabbitMQ: RabbitMQConfig{URL: "amqp://guest:guest@localhost:5672/", Exchange: "avatars"}},
-		Worker:   WorkerConfig{Concurrency: 1},
-		Log:      LogConfig{Backend: "slog", Level: "info", Format: "json"},
-	}
-}
-
-func TestConfigValidate(t *testing.T) {
-	cfg := validTestConfig()
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("valid config rejected: %v", err)
-	}
-
-	cfg.Broker.Type = "unsupported"
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("unsupported broker accepted")
-	}
-}
-
-func TestConfigValidateRequiresInfrastructureSettings(t *testing.T) {
-	cfg := validTestConfig()
-	cfg.Database.DSN = ""
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("empty database DSN accepted")
-	}
-}
-func validKafkaTestConfig() Config {
-	cfg := validTestConfig()
-	cfg.Broker = BrokerConfig{
-		Type: "kafka",
-		Kafka: KafkaConfig{
-			Brokers:           []string{"localhost:9092"},
-			GroupID:           "workers",
-			MaxAttempts:       3,
-			DLQSuffix:         ".dlq",
-			SessionTimeout:    10 * time.Second,
-			HeartbeatInterval: 3 * time.Second,
-			FetchMinBytes:     1,
-			FetchMaxWait:      250 * time.Millisecond,
-		},
-	}
-	return cfg
-}
-
-func TestConfigValidateRejectsInvalidFields(t *testing.T) {
-	tests := []struct {
-		name  string
-		setup func(*Config)
-	}{
-		{"nil config", func(_ *Config) {}},
-		{"empty s3 endpoint", func(c *Config) { c.S3.Endpoint = "" }},
-		{"empty access key", func(c *Config) { c.S3.AccessKeyID = "" }},
-		{"empty secret key", func(c *Config) { c.S3.SecretAccessKey = "" }},
-		{"empty bucket", func(c *Config) { c.S3.Bucket = "" }},
-		{"invalid port below range", func(c *Config) { c.Server.Port = 0 }},
-		{"invalid port above range", func(c *Config) { c.Server.Port = 65536 }},
-		{"invalid read timeout", func(c *Config) { c.Server.ReadTimeout = 0 }},
-		{"invalid write timeout", func(c *Config) { c.Server.WriteTimeout = 0 }},
-		{"invalid upload size", func(c *Config) { c.Server.MaxUploadSize = 0 }},
-		{"invalid rate per second", func(c *Config) { c.Server.RateLimitPerSecond = 0 }},
-		{"invalid rate burst", func(c *Config) { c.Server.RateLimitBurst = 0 }},
-		{"invalid database max connections", func(c *Config) { c.Database.MaxConns = 0 }},
-		{"invalid database min connections", func(c *Config) { c.Database.MinConns = -1 }},
-		{"database min exceeds max", func(c *Config) { c.Database.MinConns = 6 }},
-		{"unsupported broker", func(c *Config) { c.Broker.Type = "nats" }},
-		{"empty rabbit url", func(c *Config) { c.Broker.RabbitMQ.URL = "" }},
-		{"empty rabbit exchange", func(c *Config) { c.Broker.RabbitMQ.Exchange = "" }},
-		{"negative rabbit retry delay", func(c *Config) { c.Broker.RabbitMQ.RetryDelay = -time.Second }},
-		{"negative rabbit attempts", func(c *Config) { c.Broker.RabbitMQ.MaxAttempts = -1 }},
-		{"invalid rabbit queue type", func(c *Config) { c.Broker.RabbitMQ.QueueType = "stream" }},
-		{"invalid worker concurrency", func(c *Config) { c.Worker.Concurrency = 0 }},
-		{"invalid log backend", func(c *Config) { c.Log.Backend = "zerolog" }},
-		{"invalid log level", func(c *Config) { c.Log.Level = "trace" }},
-		{"invalid log format", func(c *Config) { c.Log.Format = "text" }},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := validTestConfig()
-			if tt.name == "nil config" {
-				var nilConfig *Config
-				if err := nilConfig.Validate(); err == nil {
-					t.Fatal("nil config accepted")
-				}
-				return
-			}
-			tt.setup(&cfg)
-			if err := cfg.Validate(); err == nil {
-				t.Fatal("invalid config accepted")
-			}
-		})
-	}
-}
-
-func TestKafkaConfigValidateRejectsInvalidFields(t *testing.T) {
-	tests := []struct {
-		name  string
-		setup func(*KafkaConfig)
-	}{
-		{"empty brokers", func(c *KafkaConfig) { c.Brokers = nil }},
-		{"blank first broker", func(c *KafkaConfig) { c.Brokers = []string{"  "} }},
-		{"empty group id", func(c *KafkaConfig) { c.GroupID = "" }},
-		{"invalid max attempts", func(c *KafkaConfig) { c.MaxAttempts = 0 }},
-		{"empty dlq suffix", func(c *KafkaConfig) { c.DLQSuffix = "" }},
-		{"invalid session timeout", func(c *KafkaConfig) { c.SessionTimeout = 0 }},
-		{"invalid heartbeat timeout", func(c *KafkaConfig) { c.HeartbeatInterval = 0 }},
-		{"heartbeat not less than session", func(c *KafkaConfig) { c.HeartbeatInterval = c.SessionTimeout }},
-		{"invalid fetch min bytes", func(c *KafkaConfig) { c.FetchMinBytes = 0 }},
-		{"invalid fetch max wait", func(c *KafkaConfig) { c.FetchMaxWait = 0 }},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := validKafkaTestConfig()
-			tt.setup(&cfg.Broker.Kafka)
-			if err := cfg.Validate(); err == nil {
-				t.Fatal("invalid Kafka config accepted")
-			}
-		})
-	}
-}
-
-func TestConfigValidateAcceptsKafkaAndRabbitQueueVariants(t *testing.T) {
-	for _, queueType := range []string{"", "classic", "quorum"} {
-		cfg := validTestConfig()
-		cfg.Broker.RabbitMQ.QueueType = queueType
-		if err := cfg.Validate(); err != nil {
-			t.Fatalf("rabbit queue type %q rejected: %v", queueType, err)
-		}
-	}
-	cfg := validKafkaTestConfig()
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("valid Kafka config rejected: %v", err)
-	}
-}
-
-func TestIsValidLogLevel(t *testing.T) {
-	for _, level := range []string{"debug", "info", "warn", "error"} {
-		if !isValidLogLevel(level) {
-			t.Errorf("log level %q rejected", level)
-		}
-	}
-	if isValidLogLevel("trace") {
-		t.Error("unsupported log level accepted")
-	}
-}
 func validConfigYAML() string {
 	return `
 server:
@@ -275,13 +124,16 @@ func TestLoadReportsConfigAndEnvironmentErrors(t *testing.T) {
 			t.Fatalf("Load() error = %v", err)
 		}
 	})
-	t.Run("validation error", func(t *testing.T) {
+	t.Run("component validation is deferred", func(t *testing.T) {
 		unsetEnv(t, "CONFIG_FILE")
 		path := writeConfigFile(t, strings.Replace(validConfigYAML(), "dsn: postgres://user:pass@localhost/db", "dsn: ''", 1))
 		t.Setenv("CONFIG_FILE", path)
-		_, err := Load()
-		if err == nil || !strings.Contains(err.Error(), "validate config") {
+		cfg, err := Load()
+		if err != nil {
 			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.Database.DSN != "" {
+			t.Fatalf("Load() unexpectedly validated database DSN: %q", cfg.Database.DSN)
 		}
 	})
 }

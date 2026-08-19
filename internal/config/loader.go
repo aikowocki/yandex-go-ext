@@ -30,9 +30,6 @@ func Load() (*Config, error) {
 	if err := readEnvironment(&cfg); err != nil {
 		return nil, fmt.Errorf("read environment: %w", err)
 	}
-	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("validate config: %w", err)
-	}
 	return &cfg, nil
 }
 

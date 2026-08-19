@@ -63,7 +63,7 @@ func TestProviderFactoryBranches(t *testing.T) {
 	if _, err := NewObjectStore(context.Background(), &config.Config{}); err == nil {
 		t.Fatal("empty object storage config accepted")
 	}
-	server, err := NewREST(&config.Config{}, &components.Avatar{DB: &pgxpool.Pool{}})
+	server, err := NewREST(&config.Config{Server: config.ServerConfig{RateLimitPerSecond: 1, RateLimitBurst: 1}}, &components.Avatar{DB: &pgxpool.Pool{}})
 	if err != nil || server == nil {
 		t.Fatalf("NewREST() = %v, %v", server, err)
 	}

@@ -1,30 +1,34 @@
 package config
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
 
-func TestKafkaConfigValidation(t *testing.T) {
-	cfg := validTestConfig()
-	cfg.Broker.Type = "kafka"
-	cfg.Broker.Kafka = KafkaConfig{
-		Brokers:           []string{"localhost:9092"},
-		GroupID:           "gophprofile-workers",
-		MaxAttempts:       5,
-		DLQSuffix:         ".dlq",
-		SessionTimeout:    10 * time.Second,
-		HeartbeatInterval: 3 * time.Second,
-		FetchMinBytes:     1,
-		FetchMaxWait:      250 * time.Millisecond,
-	}
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("valid Kafka config rejected: %v", err)
-	}
+func TestLoadParsesKafkaSettings(t *testing.T) {
+	path := writeConfigFile(t, `
+broker:
+  type: kafka
+  kafka:
+    brokers: [localhost:9092]
+    group_id: workers
+    max_attempts: 5
+    dlq_suffix: .dlq
+    session_timeout: 10s
+    heartbeat_interval: 3s
+    fetch_min_bytes: 1
+    fetch_max_wait: 250ms
+`)
+	t.Setenv("CONFIG_FILE", path)
 
-	cfg.Broker.Kafka.HeartbeatInterval = cfg.Broker.Kafka.SessionTimeout
-	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "heartbeat interval") {
-		t.Fatalf("invalid Kafka heartbeat settings accepted: %v", err)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Broker.Type != "kafka" || len(cfg.Broker.Kafka.Brokers) != 1 {
+		t.Fatalf("Kafka settings were not parsed: %+v", cfg.Broker)
+	}
+	if cfg.Broker.Kafka.SessionTimeout != 10*time.Second || cfg.Broker.Kafka.FetchMaxWait != 250*time.Millisecond {
+		t.Fatalf("Kafka durations were not parsed: %+v", cfg.Broker.Kafka)
 	}
 }

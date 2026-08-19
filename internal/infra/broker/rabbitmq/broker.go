@@ -3,7 +3,6 @@ package rabbitmq
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -52,8 +51,8 @@ const (
 
 // NewBroker создаёт подключение к RabbitMQ.
 func NewBroker(ctx context.Context, cfg *config.RabbitMQConfig, concurrency ...int) (*Broker, error) {
-	if cfg == nil || strings.TrimSpace(cfg.URL) == "" || strings.TrimSpace(cfg.Exchange) == "" {
-		return nil, fmt.Errorf("RabbitMQ configuration is incomplete")
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
 	}
 	if ctx == nil {
 		ctx = context.Background()

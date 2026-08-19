@@ -37,7 +37,11 @@ func NewServer(
 	thumbnails contracts.ThumbnailRepository,
 	storage contracts.ObjectStorage,
 	healthChecks ...DependencyChecks,
-) *Server {
+) (*Server, error) {
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
+	}
+
 	e := echo.New()
 	e.HideBanner = true
 	e.Use(restmiddleware.RequestLogger)
@@ -69,7 +73,7 @@ func NewServer(
 	registerRoutes(e, cfg, handler, checks)
 
 	address := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	return &Server{echo: e, http: &http.Server{Addr: address, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout, Handler: e}, health: checks}
+	return &Server{echo: e, http: &http.Server{Addr: address, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout, Handler: e}, health: checks}, nil
 }
 
 func healthResponse(c echo.Context, checks DependencyChecks) error {

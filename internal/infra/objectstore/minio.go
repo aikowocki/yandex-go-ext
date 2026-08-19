@@ -21,6 +21,10 @@ type MinIO struct {
 
 // NewMinIO создаёт клиент MinIO и проверяет bucket.
 func NewMinIO(ctx context.Context, cfg config.S3Config) (*MinIO, error) {
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
+	}
+
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
 		Secure: cfg.UseSSL,

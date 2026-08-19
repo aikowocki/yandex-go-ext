@@ -1,8 +1,6 @@
 package config
 
 import (
-	"fmt"
-	"strings"
 	"time"
 )
 
@@ -90,97 +88,4 @@ type LogConfig struct {
 	Backend string `yaml:"backend" env:"LOG_BACKEND" env-default:"slog"`
 	Level   string `yaml:"level" env:"LOG_LEVEL" env-default:"info"`
 	Format  string `yaml:"format" env:"LOG_FORMAT" env-default:"json"`
-}
-
-// Validate проверяет обязательные поля и допустимые значения конфигурации.
-func (c *Config) Validate() error {
-	if c == nil {
-		return fmt.Errorf("config is nil")
-	}
-	if strings.TrimSpace(c.Database.DSN) == "" {
-		return fmt.Errorf("database.dsn is required (set DATABASE_URL)")
-	}
-	if strings.TrimSpace(c.S3.Endpoint) == "" {
-		return fmt.Errorf("s3.endpoint is required (set S3_ENDPOINT)")
-	}
-	if strings.TrimSpace(c.S3.AccessKeyID) == "" || strings.TrimSpace(c.S3.SecretAccessKey) == "" {
-		return fmt.Errorf("s3 credentials are required")
-	}
-	if strings.TrimSpace(c.S3.Bucket) == "" {
-		return fmt.Errorf("s3.bucket must not be empty")
-	}
-	if c.Server.Port < 1 || c.Server.Port > 65535 {
-		return fmt.Errorf("server.port must be between 1 and 65535")
-	}
-	if c.Server.ReadTimeout <= 0 || c.Server.WriteTimeout <= 0 {
-		return fmt.Errorf("server timeouts must be positive")
-	}
-	if c.Server.MaxUploadSize <= 0 {
-		return fmt.Errorf("server.max_upload_size must be positive")
-	}
-	if c.Server.RateLimitPerSecond < 1 || c.Server.RateLimitBurst < 1 {
-		return fmt.Errorf("server rate limit settings must be positive")
-	}
-	if c.Database.MaxConns < 1 || c.Database.MinConns < 0 || c.Database.MinConns > c.Database.MaxConns {
-		return fmt.Errorf("database pool limits are invalid")
-	}
-	if c.Broker.Type != "rabbitmq" && c.Broker.Type != "kafka" {
-		return fmt.Errorf("broker.type must be rabbitmq or kafka, got %q", c.Broker.Type)
-	}
-	if c.Broker.Type == "rabbitmq" {
-		if strings.TrimSpace(c.Broker.RabbitMQ.URL) == "" || strings.TrimSpace(c.Broker.RabbitMQ.Exchange) == "" {
-			return fmt.Errorf("rabbitmq url and exchange are required")
-		}
-		if c.Broker.RabbitMQ.RetryDelay < 0 {
-			return fmt.Errorf("rabbitmq.retry_delay must not be negative")
-		}
-		if c.Broker.RabbitMQ.MaxAttempts < 0 {
-			return fmt.Errorf("rabbitmq.max_attempts must not be negative")
-		}
-		if c.Broker.RabbitMQ.QueueType != "" && c.Broker.RabbitMQ.QueueType != "classic" && c.Broker.RabbitMQ.QueueType != "quorum" {
-			return fmt.Errorf("rabbitmq.queue_type must be classic or quorum")
-		}
-	}
-	if c.Broker.Type == "kafka" {
-		if len(c.Broker.Kafka.Brokers) == 0 || strings.TrimSpace(c.Broker.Kafka.Brokers[0]) == "" {
-			return fmt.Errorf("kafka.brokers are required")
-		}
-		if strings.TrimSpace(c.Broker.Kafka.GroupID) == "" {
-			return fmt.Errorf("kafka.group_id is required")
-		}
-		if c.Broker.Kafka.MaxAttempts < 1 {
-			return fmt.Errorf("kafka.max_attempts must be >= 1")
-		}
-		if strings.TrimSpace(c.Broker.Kafka.DLQSuffix) == "" {
-			return fmt.Errorf("kafka.dlq_suffix must not be empty")
-		}
-		if c.Broker.Kafka.SessionTimeout <= 0 || c.Broker.Kafka.HeartbeatInterval <= 0 || c.Broker.Kafka.HeartbeatInterval >= c.Broker.Kafka.SessionTimeout {
-			return fmt.Errorf("kafka heartbeat interval must be positive and less than session timeout")
-		}
-		if c.Broker.Kafka.FetchMinBytes < 1 || c.Broker.Kafka.FetchMaxWait <= 0 {
-			return fmt.Errorf("kafka fetch settings must be positive")
-		}
-	}
-	if c.Worker.Concurrency < 1 {
-		return fmt.Errorf("worker.concurrency must be >= 1")
-	}
-	if c.Log.Backend != "" && c.Log.Backend != "slog" && c.Log.Backend != "zap" {
-		return fmt.Errorf("log.backend must be slog or zap")
-	}
-	if !isValidLogLevel(c.Log.Level) {
-		return fmt.Errorf("log.level must be debug, info, warn or error")
-	}
-	if c.Log.Format != "json" && c.Log.Format != "console" {
-		return fmt.Errorf("log.format must be json or console")
-	}
-	return nil
-}
-
-func isValidLogLevel(level string) bool {
-	switch level {
-	case "debug", "info", "warn", "error":
-		return true
-	default:
-		return false
-	}
 }

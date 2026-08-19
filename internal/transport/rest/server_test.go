@@ -20,7 +20,10 @@ import (
 )
 
 func TestRoutesMatchSpecification(t *testing.T) {
-	server := NewServer(config.ServerConfig{Host: "127.0.0.1", Port: 8080, MaxUploadSize: 10 * 1024 * 1024}, nil, nil, nil)
+	server, err := NewServer(config.ServerConfig{Host: "127.0.0.1", Port: 8080, MaxUploadSize: 10 * 1024 * 1024, RateLimitPerSecond: 10, RateLimitBurst: 20}, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	expected := map[string]bool{
 		"POST /api/v1/avatars":                 false,
@@ -51,7 +54,10 @@ func TestRoutesMatchSpecification(t *testing.T) {
 	}
 }
 func TestServerRunShutsDownOnContextCancellation(t *testing.T) {
-	server := NewServer(config.ServerConfig{Host: "127.0.0.1", Port: 0, ReadTimeout: time.Second, WriteTimeout: time.Second}, nil, nil, nil)
+	server, err := NewServer(config.ServerConfig{Host: "127.0.0.1", Port: 0, ReadTimeout: time.Second, WriteTimeout: time.Second, RateLimitPerSecond: 10, RateLimitBurst: 20}, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 	go func() { result <- server.Run(ctx) }()
@@ -68,7 +74,10 @@ func TestServerRunShutsDownOnContextCancellation(t *testing.T) {
 }
 
 func TestServerRunReturnsListenError(t *testing.T) {
-	server := NewServer(config.ServerConfig{Host: "bad host", Port: 0}, nil, nil, nil)
+	server, err := NewServer(config.ServerConfig{Host: "bad host", Port: 0, RateLimitPerSecond: 10, RateLimitBurst: 20}, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := server.Run(context.Background()); err == nil {
 		t.Fatal("invalid listen address accepted")
 	}

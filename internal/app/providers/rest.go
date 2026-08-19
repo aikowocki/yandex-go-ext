@@ -23,13 +23,17 @@ func NewREST(cfg *config.Config, avatarComponents *components.Avatar) (*rest.Ser
 		Storage:  dependencyHealthCheck(avatarComponents.Storage),
 		Broker:   dependencyHealthCheck(avatarComponents.Broker),
 	}
-	return rest.NewServer(
+	server, err := rest.NewServer(
 		cfg.Server,
 		avatarComponents.Avatar,
 		avatarComponents.ThumbnailRepo,
 		avatarComponents.Storage,
 		checks,
-	), nil
+	)
+	if err != nil {
+		return nil, err
+	}
+	return server, nil
 }
 
 func dependencyHealthCheck(dependency any) func(context.Context) error {

@@ -10,13 +10,7 @@ import (
 
 func registerRoutes(e *echo.Echo, cfg config.ServerConfig, handler *avatarHandler, checks DependencyChecks) {
 	ratePerSecond := cfg.RateLimitPerSecond
-	if ratePerSecond < 1 {
-		ratePerSecond = 10
-	}
 	burst := cfg.RateLimitBurst
-	if burst < 1 {
-		burst = 20
-	}
 
 	e.GET("/health", func(c echo.Context) error { return healthResponse(c, checks) })
 	e.File("/web/upload", "web/index.html")

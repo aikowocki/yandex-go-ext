@@ -187,6 +187,9 @@ var global = newDispatcher()
 
 // New создаёт логгер из конфигурации.
 func New(cfg config.LogConfig) (Logger, error) {
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
+	}
 	backend := strings.ToLower(strings.TrimSpace(cfg.Backend))
 	if backend == "" {
 		backend = "slog"

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/IBM/sarama"
 	"github.com/aikowocki/yandex-go-ext/internal/config"
@@ -43,28 +42,16 @@ func NewBroker(ctx context.Context, cfg *config.KafkaConfig) (*Broker, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
+	}
 
 	maxAttempts := cfg.MaxAttempts
-	if maxAttempts < 1 {
-		maxAttempts = 5
-	}
 	dlqSuffix := cfg.DLQSuffix
-	if dlqSuffix == "" {
-		dlqSuffix = ".dlq"
-	}
 	sessionTimeout := cfg.SessionTimeout
-	if sessionTimeout <= 0 {
-		sessionTimeout = 10 * time.Second
-	}
 	heartbeatInterval := cfg.HeartbeatInterval
-	if heartbeatInterval <= 0 || heartbeatInterval >= sessionTimeout {
-		heartbeatInterval = sessionTimeout / 3
-	}
-	fetchMinBytes := max(cfg.FetchMinBytes, 1)
+	fetchMinBytes := cfg.FetchMinBytes
 	fetchMaxWait := cfg.FetchMaxWait
-	if fetchMaxWait <= 0 {
-		fetchMaxWait = 250 * time.Millisecond
-	}
 
 	producerConfig := sarama.NewConfig()
 	producerConfig.Version = sarama.V3_0_0_0

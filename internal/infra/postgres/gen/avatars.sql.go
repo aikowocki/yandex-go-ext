@@ -95,8 +95,8 @@ type CreateAvatarParams struct {
 	Width               int32              `json:"width"`
 	Height              int32              `json:"height"`
 	S3KeyOriginal       string             `json:"s3_key_original"`
-	UploadStatus        string             `json:"upload_status"`
-	ProcessingStatus    string             `json:"processing_status"`
+	UploadStatus        UploadStatus       `json:"upload_status"`
+	ProcessingStatus    ProcessingStatus   `json:"processing_status"`
 	ProcessingStartedAt pgtype.Timestamptz `json:"processing_started_at"`
 	ProcessingAttempts  int32              `json:"processing_attempts"`
 	LastError           string             `json:"last_error"`
@@ -309,9 +309,9 @@ LIMIT $3
 `
 
 type GetPendingAvatarsParams struct {
-	UploadStatus     string `json:"upload_status"`
-	ProcessingStatus string `json:"processing_status"`
-	Limit            int32  `json:"limit"`
+	UploadStatus     UploadStatus     `json:"upload_status"`
+	ProcessingStatus ProcessingStatus `json:"processing_status"`
+	Limit            int32            `json:"limit"`
 }
 
 func (q *Queries) GetPendingAvatars(ctx context.Context, arg GetPendingAvatarsParams) ([]Avatar, error) {
@@ -485,8 +485,8 @@ type UpdateAvatarParams struct {
 	Width               int32              `json:"width"`
 	Height              int32              `json:"height"`
 	S3KeyOriginal       string             `json:"s3_key_original"`
-	UploadStatus        string             `json:"upload_status"`
-	ProcessingStatus    string             `json:"processing_status"`
+	UploadStatus        UploadStatus       `json:"upload_status"`
+	ProcessingStatus    ProcessingStatus   `json:"processing_status"`
 	ProcessingStartedAt pgtype.Timestamptz `json:"processing_started_at"`
 	ProcessingAttempts  int32              `json:"processing_attempts"`
 	LastError           string             `json:"last_error"`
@@ -555,7 +555,7 @@ WHERE id = $1 AND deleted_at IS NULL
 
 type UpdateProcessingStatusParams struct {
 	ID               pgtype.UUID        `json:"id"`
-	ProcessingStatus string             `json:"processing_status"`
+	ProcessingStatus ProcessingStatus   `json:"processing_status"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 

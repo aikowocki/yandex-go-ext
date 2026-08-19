@@ -52,7 +52,7 @@ func (r *BlobRepository) GetOrCreate(ctx context.Context, blob *domain.Blob) (*d
 		Width:         int32(blob.Width),
 		Height:        int32(blob.Height),
 		ObjectKey:     blob.ObjectKey,
-		StorageStatus: string(blob.StorageStatus),
+		StorageStatus: gen.BlobStorageStatus(blob.StorageStatus),
 		LastError:     blob.LastError,
 		CreatedAt:     toPGTime(&blob.CreatedAt),
 		UpdatedAt:     toPGTime(&blob.UpdatedAt),
@@ -125,7 +125,7 @@ func (r *BlobRepository) EnsureDerivation(ctx context.Context, derivation *domai
 		Variant:          string(derivation.Variant),
 		ProcessorVersion: derivation.ProcessorVersion,
 		OutputFormat:     derivation.OutputFormat,
-		Status:           string(derivation.Status),
+		Status:           gen.BlobDerivationStatus(derivation.Status),
 		CreatedAt:        toPGTime(&derivation.CreatedAt),
 	})
 	if err != nil {

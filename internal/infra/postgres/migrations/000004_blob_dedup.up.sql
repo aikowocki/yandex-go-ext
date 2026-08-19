@@ -1,3 +1,6 @@
+CREATE TYPE blob_storage_status AS ENUM ('uploading', 'ready', 'failed');
+CREATE TYPE blob_derivation_status AS ENUM ('uploading', 'ready', 'failed');
+
 CREATE TABLE IF NOT EXISTS blobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sha256 BYTEA NOT NULL UNIQUE CHECK (octet_length(sha256) = 32),
@@ -6,7 +9,7 @@ CREATE TABLE IF NOT EXISTS blobs (
     width INTEGER NOT NULL CHECK (width > 0),
     height INTEGER NOT NULL CHECK (height > 0),
     object_key TEXT NOT NULL UNIQUE,
-    storage_status TEXT NOT NULL CHECK (storage_status IN ('uploading', 'ready', 'failed')),
+    storage_status blob_storage_status NOT NULL,
     last_error TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -32,7 +35,7 @@ CREATE TABLE IF NOT EXISTS blob_derivations (
     variant TEXT NOT NULL,
     processor_version TEXT NOT NULL,
     output_format TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('uploading', 'ready', 'failed')),
+    status blob_derivation_status NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (parent_blob_id, variant, processor_version, output_format)
 );

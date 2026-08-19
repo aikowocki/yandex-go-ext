@@ -5,8 +5,227 @@
 package gen
 
 import (
+	"database/sql/driver"
+	"fmt"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type BlobDerivationStatus string
+
+const (
+	BlobDerivationStatusUploading BlobDerivationStatus = "uploading"
+	BlobDerivationStatusReady     BlobDerivationStatus = "ready"
+	BlobDerivationStatusFailed    BlobDerivationStatus = "failed"
+)
+
+func (e *BlobDerivationStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = BlobDerivationStatus(s)
+	case string:
+		*e = BlobDerivationStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for BlobDerivationStatus: %T", src)
+	}
+	return nil
+}
+
+type NullBlobDerivationStatus struct {
+	BlobDerivationStatus BlobDerivationStatus `json:"blob_derivation_status"`
+	Valid                bool                 `json:"valid"` // Valid is true if BlobDerivationStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullBlobDerivationStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.BlobDerivationStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.BlobDerivationStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullBlobDerivationStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.BlobDerivationStatus), nil
+}
+
+type BlobStorageStatus string
+
+const (
+	BlobStorageStatusUploading BlobStorageStatus = "uploading"
+	BlobStorageStatusReady     BlobStorageStatus = "ready"
+	BlobStorageStatusFailed    BlobStorageStatus = "failed"
+	BlobStorageStatusDeleting  BlobStorageStatus = "deleting"
+)
+
+func (e *BlobStorageStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = BlobStorageStatus(s)
+	case string:
+		*e = BlobStorageStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for BlobStorageStatus: %T", src)
+	}
+	return nil
+}
+
+type NullBlobStorageStatus struct {
+	BlobStorageStatus BlobStorageStatus `json:"blob_storage_status"`
+	Valid             bool              `json:"valid"` // Valid is true if BlobStorageStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullBlobStorageStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.BlobStorageStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.BlobStorageStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullBlobStorageStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.BlobStorageStatus), nil
+}
+
+type ProcessingStatus string
+
+const (
+	ProcessingStatusPending    ProcessingStatus = "pending"
+	ProcessingStatusProcessing ProcessingStatus = "processing"
+	ProcessingStatusCompleted  ProcessingStatus = "completed"
+	ProcessingStatusFailed     ProcessingStatus = "failed"
+)
+
+func (e *ProcessingStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ProcessingStatus(s)
+	case string:
+		*e = ProcessingStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ProcessingStatus: %T", src)
+	}
+	return nil
+}
+
+type NullProcessingStatus struct {
+	ProcessingStatus ProcessingStatus `json:"processing_status"`
+	Valid            bool             `json:"valid"` // Valid is true if ProcessingStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullProcessingStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ProcessingStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ProcessingStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullProcessingStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ProcessingStatus), nil
+}
+
+type ThumbnailSize string
+
+const (
+	ThumbnailSize100x100 ThumbnailSize = "100x100"
+	ThumbnailSize300x300 ThumbnailSize = "300x300"
+)
+
+func (e *ThumbnailSize) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ThumbnailSize(s)
+	case string:
+		*e = ThumbnailSize(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ThumbnailSize: %T", src)
+	}
+	return nil
+}
+
+type NullThumbnailSize struct {
+	ThumbnailSize ThumbnailSize `json:"thumbnail_size"`
+	Valid         bool          `json:"valid"` // Valid is true if ThumbnailSize is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullThumbnailSize) Scan(value interface{}) error {
+	if value == nil {
+		ns.ThumbnailSize, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ThumbnailSize.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullThumbnailSize) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ThumbnailSize), nil
+}
+
+type UploadStatus string
+
+const (
+	UploadStatusUploading UploadStatus = "uploading"
+	UploadStatusCompleted UploadStatus = "completed"
+	UploadStatusFailed    UploadStatus = "failed"
+)
+
+func (e *UploadStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = UploadStatus(s)
+	case string:
+		*e = UploadStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for UploadStatus: %T", src)
+	}
+	return nil
+}
+
+type NullUploadStatus struct {
+	UploadStatus UploadStatus `json:"upload_status"`
+	Valid        bool         `json:"valid"` // Valid is true if UploadStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullUploadStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.UploadStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.UploadStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullUploadStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.UploadStatus), nil
+}
 
 type Avatar struct {
 	ID                  pgtype.UUID        `json:"id"`
@@ -17,8 +236,8 @@ type Avatar struct {
 	Width               int32              `json:"width"`
 	Height              int32              `json:"height"`
 	S3KeyOriginal       string             `json:"s3_key_original"`
-	UploadStatus        string             `json:"upload_status"`
-	ProcessingStatus    string             `json:"processing_status"`
+	UploadStatus        UploadStatus       `json:"upload_status"`
+	ProcessingStatus    ProcessingStatus   `json:"processing_status"`
 	ProcessingStartedAt pgtype.Timestamptz `json:"processing_started_at"`
 	ProcessingAttempts  int32              `json:"processing_attempts"`
 	LastError           string             `json:"last_error"`
@@ -40,21 +259,21 @@ type Blob struct {
 	Width         int32              `json:"width"`
 	Height        int32              `json:"height"`
 	ObjectKey     string             `json:"object_key"`
-	StorageStatus string             `json:"storage_status"`
+	StorageStatus BlobStorageStatus  `json:"storage_status"`
 	LastError     string             `json:"last_error"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
 type BlobDerivation struct {
-	ID               pgtype.UUID        `json:"id"`
-	ParentBlobID     pgtype.UUID        `json:"parent_blob_id"`
-	DerivedBlobID    pgtype.UUID        `json:"derived_blob_id"`
-	Variant          string             `json:"variant"`
-	ProcessorVersion string             `json:"processor_version"`
-	OutputFormat     string             `json:"output_format"`
-	Status           string             `json:"status"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ID               pgtype.UUID          `json:"id"`
+	ParentBlobID     pgtype.UUID          `json:"parent_blob_id"`
+	DerivedBlobID    pgtype.UUID          `json:"derived_blob_id"`
+	Variant          string               `json:"variant"`
+	ProcessorVersion string               `json:"processor_version"`
+	OutputFormat     string               `json:"output_format"`
+	Status           BlobDerivationStatus `json:"status"`
+	CreatedAt        pgtype.Timestamptz   `json:"created_at"`
 }
 
 type OutboxEvent struct {
@@ -72,13 +291,13 @@ type OutboxEvent struct {
 type Thumbnail struct {
 	ID           pgtype.UUID        `json:"id"`
 	AvatarID     pgtype.UUID        `json:"avatar_id"`
-	Size         string             `json:"size"`
+	Size         ThumbnailSize      `json:"size"`
 	S3Key        string             `json:"s3_key"`
 	Width        int32              `json:"width"`
 	Height       int32              `json:"height"`
 	SizeBytes    int64              `json:"size_bytes"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
 	BlobID       pgtype.UUID        `json:"blob_id"`
 	DerivationID pgtype.UUID        `json:"derivation_id"`
-	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
 }

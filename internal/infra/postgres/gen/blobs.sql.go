@@ -76,14 +76,14 @@ RETURNING id, parent_blob_id, derived_blob_id, variant, processor_version,
 `
 
 type EnsureBlobDerivationParams struct {
-	ID               pgtype.UUID        `json:"id"`
-	ParentBlobID     pgtype.UUID        `json:"parent_blob_id"`
-	DerivedBlobID    pgtype.UUID        `json:"derived_blob_id"`
-	Variant          string             `json:"variant"`
-	ProcessorVersion string             `json:"processor_version"`
-	OutputFormat     string             `json:"output_format"`
-	Status           string             `json:"status"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ID               pgtype.UUID          `json:"id"`
+	ParentBlobID     pgtype.UUID          `json:"parent_blob_id"`
+	DerivedBlobID    pgtype.UUID          `json:"derived_blob_id"`
+	Variant          string               `json:"variant"`
+	ProcessorVersion string               `json:"processor_version"`
+	OutputFormat     string               `json:"output_format"`
+	Status           BlobDerivationStatus `json:"status"`
+	CreatedAt        pgtype.Timestamptz   `json:"created_at"`
 }
 
 func (q *Queries) EnsureBlobDerivation(ctx context.Context, arg EnsureBlobDerivationParams) (BlobDerivation, error) {
@@ -129,7 +129,7 @@ type GetOrCreateBlobParams struct {
 	Width         int32              `json:"width"`
 	Height        int32              `json:"height"`
 	ObjectKey     string             `json:"object_key"`
-	StorageStatus string             `json:"storage_status"`
+	StorageStatus BlobStorageStatus  `json:"storage_status"`
 	LastError     string             `json:"last_error"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`

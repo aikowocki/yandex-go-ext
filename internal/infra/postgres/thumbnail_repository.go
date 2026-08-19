@@ -34,7 +34,7 @@ func (r *ThumbnailRepository) Create(ctx context.Context, thumbnail *domain.Thum
 	created, err := r.q(ctx).CreateThumbnail(ctx, gen.CreateThumbnailParams{
 		ID:           toPGUUID(thumbnail.ID),
 		AvatarID:     toPGUUID(thumbnail.AvatarID),
-		Size:         string(thumbnail.Size),
+		Size:         gen.ThumbnailSize(thumbnail.Size),
 		S3Key:        thumbnail.S3Key,
 		Width:        int32(thumbnail.Width),
 		Height:       int32(thumbnail.Height),

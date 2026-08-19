@@ -10,10 +10,10 @@ ON CONFLICT (avatar_id, size) DO UPDATE SET
     size_bytes = EXCLUDED.size_bytes,
     blob_id = EXCLUDED.blob_id,
     derivation_id = EXCLUDED.derivation_id
-RETURNING id, avatar_id, size, s3_key, width, height, size_bytes, created_at, blob_id, derivation_id, deleted_at;
+RETURNING id, avatar_id, size, s3_key, width, height, size_bytes, created_at, deleted_at, blob_id, derivation_id;
 
 -- name: ListThumbnailsByAvatarID :many
-SELECT id, avatar_id, size, s3_key, width, height, size_bytes, created_at, blob_id, derivation_id, deleted_at
+SELECT id, avatar_id, size, s3_key, width, height, size_bytes, created_at, deleted_at, blob_id, derivation_id
 FROM thumbnails
 WHERE avatar_id = $1 AND deleted_at IS NULL
 ORDER BY width;

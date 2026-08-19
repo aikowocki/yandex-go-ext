@@ -53,8 +53,8 @@ func (r *AvatarRepository) Create(ctx context.Context, avatar *domain.Avatar) er
 		Height:              int32(avatar.Height),
 		S3KeyOriginal:       avatar.S3KeyOriginal,
 		SourceBlobID:        toPGUUID(avatar.SourceBlobID),
-		UploadStatus:        string(avatar.UploadStatus),
-		ProcessingStatus:    string(avatar.ProcessingStatus),
+		UploadStatus:        gen.UploadStatus(avatar.UploadStatus),
+		ProcessingStatus:    gen.ProcessingStatus(avatar.ProcessingStatus),
 		ProcessingStartedAt: toPGTime(avatar.ProcessingStartedAt),
 		ProcessingAttempts:  int32(avatar.ProcessingAttempts),
 		LastError:           avatar.LastError,
@@ -195,8 +195,8 @@ func (r *AvatarRepository) Update(ctx context.Context, avatar *domain.Avatar) er
 		Height:              int32(avatar.Height),
 		S3KeyOriginal:       avatar.S3KeyOriginal,
 		SourceBlobID:        toPGUUID(avatar.SourceBlobID),
-		UploadStatus:        string(avatar.UploadStatus),
-		ProcessingStatus:    string(avatar.ProcessingStatus),
+		UploadStatus:        gen.UploadStatus(avatar.UploadStatus),
+		ProcessingStatus:    gen.ProcessingStatus(avatar.ProcessingStatus),
 		ProcessingStartedAt: toPGTime(avatar.ProcessingStartedAt),
 		ProcessingAttempts:  int32(avatar.ProcessingAttempts),
 		LastError:           avatar.LastError,
@@ -244,8 +244,8 @@ func (r *AvatarRepository) GetPendingForProcessing(ctx context.Context, limit in
 		limit = 100
 	}
 	avatars, err := r.q(ctx).GetPendingAvatars(ctx, gen.GetPendingAvatarsParams{
-		UploadStatus:     string(domain.UploadStatusCompleted),
-		ProcessingStatus: string(domain.ProcessingStatusPending),
+		UploadStatus:     gen.UploadStatus(domain.UploadStatusCompleted),
+		ProcessingStatus: gen.ProcessingStatus(domain.ProcessingStatusPending),
 		Limit:            int32(limit),
 	})
 	if err != nil {
@@ -264,7 +264,7 @@ func (r *AvatarRepository) UpdateProcessingStatus(ctx context.Context, id uuid.U
 	now := time.Now().UTC()
 	result, err := r.q(ctx).UpdateProcessingStatus(ctx, gen.UpdateProcessingStatusParams{
 		ID:               toPGUUID(id),
-		ProcessingStatus: string(status),
+		ProcessingStatus: gen.ProcessingStatus(status),
 		UpdatedAt:        toPGTime(&now),
 	})
 	if err != nil {

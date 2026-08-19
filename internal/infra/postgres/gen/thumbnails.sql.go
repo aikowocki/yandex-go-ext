@@ -24,13 +24,13 @@ ON CONFLICT (avatar_id, size) DO UPDATE SET
     size_bytes = EXCLUDED.size_bytes,
     blob_id = EXCLUDED.blob_id,
     derivation_id = EXCLUDED.derivation_id
-RETURNING id, avatar_id, size, s3_key, width, height, size_bytes, created_at, blob_id, derivation_id, deleted_at
+RETURNING id, avatar_id, size, s3_key, width, height, size_bytes, created_at, deleted_at, blob_id, derivation_id
 `
 
 type CreateThumbnailParams struct {
 	ID           pgtype.UUID        `json:"id"`
 	AvatarID     pgtype.UUID        `json:"avatar_id"`
-	Size         string             `json:"size"`
+	Size         ThumbnailSize      `json:"size"`
 	S3Key        string             `json:"s3_key"`
 	Width        int32              `json:"width"`
 	Height       int32              `json:"height"`
@@ -63,9 +63,9 @@ func (q *Queries) CreateThumbnail(ctx context.Context, arg CreateThumbnailParams
 		&i.Height,
 		&i.SizeBytes,
 		&i.CreatedAt,
+		&i.DeletedAt,
 		&i.BlobID,
 		&i.DerivationID,
-		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -91,7 +91,7 @@ func (q *Queries) HardDeleteExpiredThumbnails(ctx context.Context, deletedAt pgt
 }
 
 const listThumbnailsByAvatarID = `-- name: ListThumbnailsByAvatarID :many
-SELECT id, avatar_id, size, s3_key, width, height, size_bytes, created_at, blob_id, derivation_id, deleted_at
+SELECT id, avatar_id, size, s3_key, width, height, size_bytes, created_at, deleted_at, blob_id, derivation_id
 FROM thumbnails
 WHERE avatar_id = $1 AND deleted_at IS NULL
 ORDER BY width
@@ -115,9 +115,9 @@ func (q *Queries) ListThumbnailsByAvatarID(ctx context.Context, avatarID pgtype.
 			&i.Height,
 			&i.SizeBytes,
 			&i.CreatedAt,
+			&i.DeletedAt,
 			&i.BlobID,
 			&i.DerivationID,
-			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}

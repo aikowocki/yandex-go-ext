@@ -4,3 +4,5 @@ ALTER TABLE thumbnails DROP COLUMN IF EXISTS blob_id;
 ALTER TABLE avatars DROP COLUMN IF EXISTS source_blob_id;
 DROP TABLE IF EXISTS blob_derivations;
 DROP TABLE IF EXISTS blobs;
+DROP TYPE IF EXISTS blob_derivation_status;
+DROP TYPE IF EXISTS blob_storage_status;

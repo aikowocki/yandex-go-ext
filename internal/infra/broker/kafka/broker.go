@@ -8,6 +8,7 @@ import (
 	"github.com/IBM/sarama"
 	"github.com/aikowocki/yandex-go-ext/internal/config"
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
+	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 )
 
 // Broker отправляет и принимает сообщения через Kafka.
@@ -22,6 +23,7 @@ type Broker struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+	logger logging.Logger
 
 	mu            sync.RWMutex
 	handlers      map[string]contracts.MessageHandler
@@ -32,13 +34,17 @@ type Broker struct {
 }
 
 // NewBroker создаёт подключение к Kafka.
-func NewBroker(ctx context.Context, cfg *config.KafkaConfig) (*Broker, error) {
+func NewBroker(ctx context.Context, cfg *config.KafkaConfig, logger logging.Logger) (*Broker, error) {
+	if logger == nil {
+		logger = logging.ComponentLogger(nil, "broker")
+	}
 	if cfg == nil || len(cfg.Brokers) == 0 || cfg.GroupID == "" {
 		return nil, fmt.Errorf("kafka configuration is incomplete")
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	ctx = logging.WithLogger(ctx, logger)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -89,6 +95,7 @@ func NewBroker(ctx context.Context, cfg *config.KafkaConfig) (*Broker, error) {
 
 	brokerCtx, cancel := context.WithCancel(ctx)
 	broker := &Broker{
+		logger:        logger,
 		producer:      producer,
 		consumerGroup: consumerGroup,
 		healthClient:  healthClient,

@@ -22,7 +22,7 @@ func TestUpdateCropPersistsCropAndQueuesProcessing(t *testing.T) {
 		LastError:        "old error",
 	}}
 	publisher := &publisherStub{}
-	useCase := New(repo, nil, &storageStub{}, publisher, nil, nil, nil, passthroughTx{})
+	useCase := New(repo, nil, &storageStub{}, publisher, nil, nil, nil, passthroughTx{}, nil)
 
 	updated, err := useCase.UpdateCrop(context.Background(), "user-1", avatarID, domain.AvatarCrop{X: 200, Y: 0, Size: 800})
 	if err != nil {
@@ -48,7 +48,7 @@ func TestUpdateCropRejectsForeignAvatar(t *testing.T) {
 		Height:       100,
 		UploadStatus: domain.UploadStatusCompleted,
 	}}
-	useCase := New(repo, nil, &storageStub{}, &publisherStub{}, nil, nil, nil, passthroughTx{})
+	useCase := New(repo, nil, &storageStub{}, &publisherStub{}, nil, nil, nil, passthroughTx{}, nil)
 
 	_, err := useCase.UpdateCrop(context.Background(), "other-user", avatarID, domain.AvatarCrop{Size: 50})
 	if !errors.Is(err, domain.ErrForbidden) {
@@ -65,7 +65,7 @@ func TestUpdateCropRejectsInvalidSelection(t *testing.T) {
 		Height:       100,
 		UploadStatus: domain.UploadStatusCompleted,
 	}}
-	useCase := New(repo, nil, &storageStub{}, &publisherStub{}, nil, nil, nil, passthroughTx{})
+	useCase := New(repo, nil, &storageStub{}, &publisherStub{}, nil, nil, nil, passthroughTx{}, nil)
 
 	_, err := useCase.UpdateCrop(context.Background(), "user-1", avatarID, domain.AvatarCrop{X: 90, Y: 0, Size: 20})
 	if !errors.Is(err, domain.ErrInvalidInput) {
@@ -114,7 +114,7 @@ func TestDeleteActivatesNewestRemainingAvatar(t *testing.T) {
 		}},
 		remaining: []*domain.Avatar{{ID: fallbackID, UserID: "user-1"}},
 	}
-	useCase := New(repo, lifecycleThumbnailRepoStub{}, &storageStub{}, &publisherStub{}, nil, nil, nil, passthroughTx{})
+	useCase := New(repo, lifecycleThumbnailRepoStub{}, &storageStub{}, &publisherStub{}, nil, nil, nil, passthroughTx{}, nil)
 
 	if err := useCase.Delete(context.Background(), "user-1", deletedID); err != nil {
 		t.Fatal(err)

@@ -19,6 +19,8 @@ const (
 
 // Runner выполняет очистку avatar, thumbnails и blob-ов.
 type Runner struct {
+	logger logging.Logger
+
 	avatarRetention    contracts.AvatarRetentionRepository
 	thumbnailRetention contracts.ThumbnailRetentionRepository
 	blobRetention      contracts.BlobRetentionRepository
@@ -39,7 +41,11 @@ func New(
 	storageLister contracts.ObjectStorageLister,
 	tx contracts.TxManager,
 	cfg config.WorkerConfig,
+	logger logging.Logger,
 ) *Runner {
+	if logger == nil {
+		logger = logging.ComponentLogger(nil, "cronjob")
+	}
 	retentionPeriod := cfg.RetentionPeriod
 	if retentionPeriod <= 0 {
 		retentionPeriod = defaultRetentionPeriod
@@ -53,6 +59,7 @@ func New(
 		batchSize = defaultCleanupBatchSize
 	}
 	return &Runner{
+		logger:             logger,
 		avatarRetention:    avatarRetention,
 		thumbnailRetention: thumbnailRetention,
 		blobRetention:      blobRetention,
@@ -70,6 +77,7 @@ func (r *Runner) RunRetention(ctx context.Context) error {
 	if r == nil {
 		return fmt.Errorf("run retention: runner is nil")
 	}
+	ctx = logging.WithLogger(ctx, r.logger)
 	deletedBefore := time.Now().UTC().Add(-r.retentionPeriod)
 	var runErrs []error
 
@@ -134,6 +142,7 @@ func (r *Runner) RunReconcile(ctx context.Context) error {
 	if r == nil || r.storageLister == nil || r.blobRetention == nil || r.storage == nil {
 		return fmt.Errorf("run reconcile: required storage capabilities are not configured")
 	}
+	ctx = logging.WithLogger(ctx, r.logger)
 	objects, err := r.storageLister.List(ctx, "blobs/", time.Now().UTC().Add(-r.orphanGracePeriod))
 	if err != nil {
 		return fmt.Errorf("list MinIO objects: %w", err)

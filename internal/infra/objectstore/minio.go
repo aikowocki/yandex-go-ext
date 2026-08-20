@@ -15,12 +15,17 @@ import (
 
 // MinIO работает с объектами в MinIO.
 type MinIO struct {
+	logger logging.Logger
 	client *minio.Client
 	bucket string
 }
 
 // NewMinIO создаёт клиент MinIO и проверяет bucket.
-func NewMinIO(ctx context.Context, cfg config.S3Config) (*MinIO, error) {
+func NewMinIO(ctx context.Context, cfg config.S3Config, logger logging.Logger) (*MinIO, error) {
+	if logger == nil {
+		logger = logging.ComponentLogger(nil, "storage")
+	}
+	ctx = logging.WithLogger(ctx, logger)
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
 	}
@@ -34,7 +39,7 @@ func NewMinIO(ctx context.Context, cfg config.S3Config) (*MinIO, error) {
 		return nil, fmt.Errorf("create object storage client: %w", err)
 	}
 
-	storage := &MinIO{client: client, bucket: cfg.Bucket}
+	storage := &MinIO{logger: logger, client: client, bucket: cfg.Bucket}
 	exists, err := client.BucketExists(ctx, cfg.Bucket)
 	if err != nil {
 		return nil, fmt.Errorf("check storage bucket: %w", err)
@@ -45,7 +50,7 @@ func NewMinIO(ctx context.Context, cfg config.S3Config) (*MinIO, error) {
 				return nil, fmt.Errorf("create storage bucket: %w", err)
 			}
 		} else {
-			logging.Info(ctx, "created object storage bucket", logging.String("bucket", cfg.Bucket))
+			storage.logger.Info(ctx, "created object storage bucket", logging.String("bucket", cfg.Bucket))
 		}
 	}
 	return storage, nil

@@ -20,6 +20,48 @@ type dispatcher struct {
 	base atomic.Value
 }
 
+type loggerContextKey struct{}
+
+// WithLogger переопределяет logger для package-level logging functions в ctx.
+func WithLogger(ctx context.Context, logger Logger) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if logger == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, loggerContextKey{}, logger)
+}
+
+// LoggerFromContext возвращает logger, явно привязанный к ctx.
+func LoggerFromContext(ctx context.Context) Logger {
+	if ctx == nil {
+		return nil
+	}
+	logger, _ := ctx.Value(loggerContextKey{}).(Logger)
+	return logger
+}
+
+// ComponentLogger создаёт logger с областью действия одного долгоживущего компонента.
+func ComponentLogger(logger Logger, component string) Logger {
+	if logger == nil {
+		logger = L()
+	}
+	if strings.TrimSpace(component) == "" {
+		return logger
+	}
+	return logger.With(String("component", component))
+}
+
+// WithComponent добавляет component-scoped logger в ctx.
+func WithComponent(ctx context.Context, component string) context.Context {
+	logger := LoggerFromContext(ctx)
+	if logger == nil {
+		logger = L()
+	}
+	return WithLogger(ctx, ComponentLogger(logger, component))
+}
+
 // Level задаёт уровень логирования.
 type Level = core.Level
 
@@ -100,12 +142,22 @@ func (d *dispatcher) set(logger Logger) (previous Logger) {
 	return previous
 }
 
+func (d *dispatcher) loggerFor(ctx context.Context) Logger {
+	if logger := LoggerFromContext(ctx); logger != nil {
+		return logger
+	}
+	return d.current()
+}
+
 func (d *dispatcher) emit(ctx context.Context, level Level, message string, args []any, write func(Logger, []any)) {
 	attrs := normalizeArgs(args)
+	logger := d.loggerFor(ctx)
 	if sink := SinkFromContext(ctx); sink != nil {
-		sink.Record(level, message, attrs...)
+		if _, child := logger.(*childLogger); !child {
+			sink.Record(level, message, attrs...)
+		}
 	}
-	write(d.current(), attrArgs(attrs))
+	write(logger, attrArgs(attrs))
 }
 
 func (d *dispatcher) Debug(ctx context.Context, message string, args ...any) {
@@ -126,7 +178,7 @@ func (d *dispatcher) Log(ctx context.Context, level Level, message string, args 
 	})
 }
 func (d *dispatcher) Enabled(ctx context.Context, level Level) bool {
-	return d.current().Enabled(ctx, level)
+	return d.loggerFor(ctx).Enabled(ctx, level)
 }
 func (d *dispatcher) With(attrs ...Attr) Logger {
 	return newChildLogger(d.current(), attrs...)
@@ -142,8 +194,10 @@ type childLogger struct {
 }
 
 func newChildLogger(backend Logger, attrs ...Attr) Logger {
-	copied := make([]Attr, len(attrs))
-	copy(copied, attrs)
+	copied := append([]Attr(nil), attrs...)
+	if len(attrs) > 0 {
+		backend = backend.With(attrs...)
+	}
 	return &childLogger{backend: backend, attrs: copied}
 }
 

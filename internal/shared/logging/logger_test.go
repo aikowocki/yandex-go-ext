@@ -86,3 +86,69 @@ func TestSinkContextHandlesNilAndValue(t *testing.T) {
 		t.Fatal("background context unexpectedly has a sink")
 	}
 }
+
+type recordingLogger struct {
+	Logger
+	attrs  []Attr
+	logged []Attr
+	calls  int
+}
+
+func (l *recordingLogger) With(attrs ...Attr) Logger {
+	combined := append([]Attr(nil), l.attrs...)
+	combined = append(combined, attrs...)
+	return &recordingLogger{Logger: l.Logger, attrs: combined}
+}
+
+func (l *recordingLogger) Log(_ context.Context, _ Level, _ string, args ...any) {
+	l.calls++
+	l.logged = append([]Attr(nil), l.attrs...)
+	l.logged = append(l.logged, normalizeArgs(args)...)
+}
+
+func TestChildLoggerPassesPersistentAttributesToBackend(t *testing.T) {
+	backend := &recordingLogger{}
+	child := newChildLogger(backend, String("component", "worker"))
+
+	child.Info(context.Background(), "worker started")
+
+	if len(backend.logged) != 0 {
+		t.Fatalf("original backend unexpectedly recorded the event: %#v", backend.logged)
+	}
+
+	scopedBackend := child.(*childLogger).backend.(*recordingLogger)
+	if len(scopedBackend.logged) != 1 || scopedBackend.logged[0] != String("component", "worker") {
+		t.Fatalf("persistent attributes were not passed to backend: %#v", scopedBackend.logged)
+	}
+}
+
+func TestPackageLoggingUsesContextLogger(t *testing.T) {
+	backend := &recordingLogger{}
+	ctx := WithLogger(context.Background(), backend)
+
+	Info(ctx, "context scoped")
+
+	if backend.calls != 1 {
+		t.Fatalf("context logger did not receive the event: calls=%d attrs=%#v", backend.calls, backend.logged)
+	}
+}
+
+type countingSink struct {
+	calls int
+}
+
+func (s *countingSink) Record(Level, string, ...Attr) {
+	s.calls++
+}
+
+func TestContextChildLoggerRecordsSinkOnce(t *testing.T) {
+	child := newChildLogger(&recordingLogger{}, String("component", "worker"))
+	sink := &countingSink{}
+	ctx := WithSink(WithLogger(context.Background(), child), sink)
+
+	Info(ctx, "worker started")
+
+	if sink.calls != 1 {
+		t.Fatalf("expected one sink event, got %d", sink.calls)
+	}
+}

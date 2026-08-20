@@ -20,7 +20,7 @@ import (
 )
 
 func TestRoutesMatchSpecification(t *testing.T) {
-	server, err := NewServer(config.ServerConfig{Host: "127.0.0.1", Port: 8080, MaxUploadSize: 10 * 1024 * 1024, RateLimitPerSecond: 10, RateLimitBurst: 20}, nil, nil, nil)
+	server, err := NewServer(config.ServerConfig{Host: "127.0.0.1", Port: 8080, MaxUploadSize: 10 * 1024 * 1024, RateLimitPerSecond: 10, RateLimitBurst: 20}, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestRoutesMatchSpecification(t *testing.T) {
 	}
 }
 func TestServerRunShutsDownOnContextCancellation(t *testing.T) {
-	server, err := NewServer(config.ServerConfig{Host: "127.0.0.1", Port: 0, ReadTimeout: time.Second, WriteTimeout: time.Second, RateLimitPerSecond: 10, RateLimitBurst: 20}, nil, nil, nil)
+	server, err := NewServer(config.ServerConfig{Host: "127.0.0.1", Port: 0, ReadTimeout: time.Second, WriteTimeout: time.Second, RateLimitPerSecond: 10, RateLimitBurst: 20}, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestServerRunShutsDownOnContextCancellation(t *testing.T) {
 }
 
 func TestServerRunReturnsListenError(t *testing.T) {
-	server, err := NewServer(config.ServerConfig{Host: "bad host", Port: 0, RateLimitPerSecond: 10, RateLimitBurst: 20}, nil, nil, nil)
+	server, err := NewServer(config.ServerConfig{Host: "bad host", Port: 0, RateLimitPerSecond: 10, RateLimitBurst: 20}, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func (handlerTxStub) Do(ctx context.Context, fn func(context.Context) error) err
 }
 
 func newHandlerForTest(repo *handlerAvatarRepoStub, thumbnails *handlerThumbnailRepoStub, storage *handlerStorageStub) *avatarHandler {
-	uc := avatarusecase.New(repo, thumbnails, storage, handlerPublisherStub{}, imageprocessor.NewProcessor(), nil, nil, handlerTxStub{})
+	uc := avatarusecase.New(repo, thumbnails, storage, handlerPublisherStub{}, imageprocessor.NewProcessor(), nil, nil, handlerTxStub{}, nil)
 	return &avatarHandler{avatar: uc, thumbnails: thumbnails, storage: storage}
 }
 

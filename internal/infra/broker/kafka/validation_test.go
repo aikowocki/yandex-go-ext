@@ -53,7 +53,7 @@ func TestValidateConfig(t *testing.T) {
 }
 
 func TestNewBrokerRejectsInvalidConfig(t *testing.T) {
-	_, err := NewBroker(t.Context(), &config.KafkaConfig{Brokers: []string{"localhost:9092"}, GroupID: "workers"})
+	_, err := NewBroker(t.Context(), &config.KafkaConfig{Brokers: []string{"localhost:9092"}, GroupID: "workers"}, nil)
 	if err == nil {
 		t.Fatal("NewBroker accepted invalid Kafka config")
 	}

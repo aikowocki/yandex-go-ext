@@ -6,11 +6,12 @@ import (
 
 	"github.com/aikowocki/yandex-go-ext/internal/app/providers/components"
 	"github.com/aikowocki/yandex-go-ext/internal/config"
+	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 	"github.com/aikowocki/yandex-go-ext/internal/transport/rest"
 )
 
 // NewREST создаёт REST-сервер и подключает проверки его зависимостей.
-func NewREST(cfg *config.Config, avatarComponents *components.Avatar) (*rest.Server, error) {
+func NewREST(cfg *config.Config, avatarComponents *components.Avatar, logger logging.Logger) (*rest.Server, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
@@ -28,6 +29,7 @@ func NewREST(cfg *config.Config, avatarComponents *components.Avatar) (*rest.Ser
 		avatarComponents.Avatar,
 		avatarComponents.ThumbnailRepo,
 		avatarComponents.Storage,
+		logger,
 		checks,
 	)
 	if err != nil {

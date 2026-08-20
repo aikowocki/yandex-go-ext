@@ -4,15 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/aikowocki/yandex-go-ext/internal/contracts"
-	"github.com/aikowocki/yandex-go-ext/internal/domain"
-	"github.com/aikowocki/yandex-go-ext/internal/domain/events"
-	"github.com/google/uuid"
 	"image"
 	"io"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/aikowocki/yandex-go-ext/internal/contracts"
+	"github.com/aikowocki/yandex-go-ext/internal/domain"
+	"github.com/aikowocki/yandex-go-ext/internal/domain/events"
+	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
+	"github.com/aikowocki/yandex-go-ext/internal/shared/testsupport"
+	"github.com/google/uuid"
 )
 
 func TestIsFinalDelivery(t *testing.T) {
@@ -354,6 +357,7 @@ func TestHandleAvatarUploadedValidationAndNotProcessable(t *testing.T) {
 func TestHandleAvatarUploadedSuccessAndProcessingErrors(t *testing.T) {
 	newWorker := func(processor workerProcessorStub, storage *workerStorageStub, repo *workerAvatarRepoStub) *Worker {
 		return &Worker{
+			logger:        logging.ComponentLogger(nil, "worker"),
 			avatarRepo:    repo,
 			thumbnailRepo: &workerThumbnailRepoStub{},
 			storage:       storage,
@@ -368,12 +372,16 @@ func TestHandleAvatarUploadedSuccessAndProcessingErrors(t *testing.T) {
 		avatar := newAvatar()
 		repo := &workerAvatarRepoStub{avatar: avatar}
 		worker := newWorker(workerProcessorStub{decodeImage: image.NewRGBA(image.Rect(0, 0, 20, 20)), decodeFormat: "jpeg"}, &workerStorageStub{}, repo)
-		if err := worker.handleAvatarUploaded(context.Background(), avatarUploadedMessage(t, avatar.ID)); err != nil {
+		ctx := testsupport.Context(t)
+		if err := worker.handleAvatarUploaded(ctx, avatarUploadedMessage(t, avatar.ID)); err != nil {
 			t.Fatal(err)
 		}
 		if avatar.ProcessingStatus != domain.ProcessingStatusCompleted || repo.updates < 2 {
 			t.Fatalf("avatar was not processed: %+v updates=%d", avatar, repo.updates)
 		}
+		testsupport.Assert(t).
+			Contains("processing avatar upload").
+			HasField("component", "worker")
 	})
 
 	tests := []struct {

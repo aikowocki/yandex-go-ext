@@ -38,7 +38,7 @@ func TestValidateConfig(t *testing.T) {
 }
 
 func TestNewServerRejectsInvalidConfig(t *testing.T) {
-	if _, err := NewServer(config.ServerConfig{RateLimitPerSecond: 0, RateLimitBurst: 1}, nil, nil, nil); err == nil {
+	if _, err := NewServer(config.ServerConfig{RateLimitPerSecond: 0, RateLimitBurst: 1}, nil, nil, nil, nil); err == nil {
 		t.Fatal("NewServer accepted invalid rate limit config")
 	}
 }

@@ -21,6 +21,12 @@ func New(ctx context.Context) (*Container, error) {
 		return nil, fmt.Errorf("logger: %w", err)
 	}
 	restoreLogger := logging.Install(logger)
+	appLogger := logging.ComponentLogger(logger, "app")
+	storageLogger := logging.ComponentLogger(logger, "storage")
+	brokerLogger := logging.ComponentLogger(logger, "broker")
+	avatarLogger := logging.ComponentLogger(logger, "avatar")
+	workerLogger := logging.ComponentLogger(logger, "worker")
+	restLogger := logging.ComponentLogger(logger, "rest")
 	cleanupLogger := true
 	defer func() {
 		if cleanupLogger {
@@ -34,26 +40,26 @@ func New(ctx context.Context) (*Container, error) {
 		return nil, fmt.Errorf("database: %w", err)
 	}
 
-	objectStore, err := providers.NewObjectStore(ctx, cfg)
+	objectStore, err := providers.NewObjectStore(ctx, cfg, storageLogger)
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("object store: %w", err)
 	}
 
-	messageBroker, err := providers.NewBroker(ctx, cfg)
+	messageBroker, err := providers.NewBroker(ctx, cfg, brokerLogger)
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("broker: %w", err)
 	}
 
-	avatarComponents, err := components.NewAvatar(db, objectStore, messageBroker)
+	avatarComponents, err := components.NewAvatar(db, objectStore, messageBroker, avatarLogger, workerLogger)
 	if err != nil {
 		_ = messageBroker.Close()
 		db.Close()
 		return nil, fmt.Errorf("avatar components: %w", err)
 	}
 
-	server, err := providers.NewREST(cfg, avatarComponents)
+	server, err := providers.NewREST(cfg, avatarComponents, restLogger)
 	if err != nil {
 		_ = messageBroker.Close()
 		db.Close()
@@ -67,7 +73,7 @@ func New(ctx context.Context) (*Container, error) {
 		Broker:        messageBroker,
 		Worker:        avatarComponents.Worker,
 		Server:        server,
-		logger:        logger,
+		logger:        appLogger,
 		restoreLogger: restoreLogger,
 	}
 	cleanupLogger = false

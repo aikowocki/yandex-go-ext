@@ -24,6 +24,8 @@ import (
 
 // Worker обрабатывает события загрузки и удаления avatar.
 type Worker struct {
+	logger logging.Logger
+
 	avatarRepo    contracts.AvatarRepository
 	thumbnailRepo contracts.ThumbnailRepository
 	storage       contracts.ObjectStorage
@@ -43,9 +45,14 @@ func NewWorker(
 	processor contracts.ImageProcessor,
 	broker contracts.Consumer,
 	tx contracts.TxManager,
+	logger logging.Logger,
 	dependencies ...any,
 ) *Worker {
+	if logger == nil {
+		logger = logging.ComponentLogger(nil, "worker")
+	}
 	worker := &Worker{
+		logger:        logger,
 		avatarRepo:    avatarRepo,
 		thumbnailRepo: thumbnailRepo,
 		storage:       storage,
@@ -68,6 +75,7 @@ func NewWorker(
 
 // Start подписывает worker на события и запускает обработку.
 func (w *Worker) Start(ctx context.Context) error {
+	ctx = logging.WithLogger(ctx, w.logger)
 	if err := w.broker.Subscribe(ctx, "avatar.uploaded", w.handleAvatarUploaded); err != nil {
 		return fmt.Errorf("subscribe to avatar.uploaded: %w", err)
 	}
@@ -85,6 +93,7 @@ func (w *Worker) Start(ctx context.Context) error {
 }
 
 func (w *Worker) handleAvatarUploaded(ctx context.Context, msg *contracts.Message) error {
+	ctx = logging.WithLogger(ctx, w.logger)
 	var event events.AvatarUploadedEvent
 	if err := json.Unmarshal(msg.Payload, &event); err != nil {
 		return fmt.Errorf("unmarshal upload event: %w", err)

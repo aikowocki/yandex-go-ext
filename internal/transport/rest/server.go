@@ -10,6 +10,7 @@ import (
 
 	"github.com/aikowocki/yandex-go-ext/internal/config"
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
+	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 	restmiddleware "github.com/aikowocki/yandex-go-ext/internal/transport/rest/middleware"
 	avatarusecase "github.com/aikowocki/yandex-go-ext/internal/usecase/avatar"
 	"github.com/labstack/echo/v4"
@@ -18,6 +19,8 @@ import (
 
 // Server обслуживает HTTP-запросы приложения.
 type Server struct {
+	logger logging.Logger
+
 	echo   *echo.Echo
 	http   *http.Server
 	health DependencyChecks
@@ -36,15 +39,19 @@ func NewServer(
 	avatar *avatarusecase.UseCase,
 	thumbnails contracts.ThumbnailRepository,
 	storage contracts.ObjectStorage,
+	logger logging.Logger,
 	healthChecks ...DependencyChecks,
 ) (*Server, error) {
+	if logger == nil {
+		logger = logging.ComponentLogger(nil, "rest")
+	}
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
 	}
 
 	e := echo.New()
 	e.HideBanner = true
-	e.Use(restmiddleware.RequestLogger)
+	e.Use(restmiddleware.RequestLogger(logger))
 	e.Use(restmiddleware.Recovery())
 	e.Use(restmiddleware.CORS())
 	e.Use(echoMiddleware.BodyLimit(strconv.FormatInt(cfg.MaxUploadSize+1024*1024, 10)))
@@ -73,7 +80,7 @@ func NewServer(
 	registerRoutes(e, cfg, handler, checks)
 
 	address := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	return &Server{echo: e, http: &http.Server{Addr: address, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout, Handler: e}, health: checks}, nil
+	return &Server{logger: logger, echo: e, http: &http.Server{Addr: address, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout, Handler: e}, health: checks}, nil
 }
 
 func healthResponse(c echo.Context, checks DependencyChecks) error {

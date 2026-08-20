@@ -12,6 +12,7 @@ import (
 
 // Subscribe подписывает обработчик на тему RabbitMQ.
 func (b *Broker) Subscribe(ctx context.Context, topic string, handler contracts.MessageHandler) error {
+	ctx = logging.WithLogger(ctx, b.logger)
 	if topic == "" || handler == nil {
 		return fmt.Errorf("topic and handler are required")
 	}

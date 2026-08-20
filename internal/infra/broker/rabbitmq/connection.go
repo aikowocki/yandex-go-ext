@@ -117,7 +117,7 @@ func connectConsumerOnce(cfg *config.RabbitMQConfig) (*amqp.Connection, *amqp.Ch
 	return conn, channel, nil
 }
 
-func watchConnection(_ context.Context, conn *amqp.Connection, role string) {
+func watchConnection(ctx context.Context, conn *amqp.Connection, role string) {
 	stateChanges := make(chan *amqp.StateChanged, 8)
 	conn.NotifyStateChange(stateChanges)
 	go func() {
@@ -125,7 +125,7 @@ func watchConnection(_ context.Context, conn *amqp.Connection, role string) {
 			if state == nil {
 				continue
 			}
-			logging.Info(context.Background(), "RabbitMQ connection state changed", logging.String("role", role), logging.String("from", state.From.String()), logging.String("to", state.To.String()), logging.Err(state.Err))
+			logging.Info(ctx, "RabbitMQ connection state changed", logging.String("role", role), logging.String("from", state.From.String()), logging.String("to", state.To.String()), logging.Err(state.Err))
 		}
 	}()
 }

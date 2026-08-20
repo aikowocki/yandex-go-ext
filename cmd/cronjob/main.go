@@ -48,7 +48,9 @@ func run() error {
 	}
 	defer db.Close()
 
-	storage, err := providers.NewObjectStore(ctx, cfg)
+	storageLogger := logging.ComponentLogger(logger, "storage")
+	cronLogger := logging.ComponentLogger(logger, "cronjob")
+	storage, err := providers.NewObjectStore(ctx, cfg, storageLogger)
 	if err != nil {
 		return fmt.Errorf("open object storage: %w", err)
 	}
@@ -56,7 +58,7 @@ func run() error {
 	thumbnailRepo := postgres.NewThumbnailRepository(db)
 	blobRepo := postgres.NewBlobRepository(db)
 	txManager := postgres.NewTxManager(db)
-	runner := cronjob.New(avatarRepo, thumbnailRepo, blobRepo, storage, storage, txManager, cfg.Worker)
+	runner := cronjob.New(avatarRepo, thumbnailRepo, blobRepo, storage, storage, txManager, cfg.Worker, cronLogger)
 
 	switch os.Args[1] {
 	case "retention":

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/aikowocki/yandex-go-ext/internal/config"
+	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -14,6 +15,7 @@ import (
 type Broker struct {
 	ctx    context.Context
 	cancel context.CancelFunc
+	logger logging.Logger
 
 	publisherConn    *amqp.Connection
 	publisherChannel *amqp.Channel
@@ -50,13 +52,17 @@ const (
 )
 
 // NewBroker создаёт подключение к RabbitMQ.
-func NewBroker(ctx context.Context, cfg *config.RabbitMQConfig, concurrency ...int) (*Broker, error) {
+func NewBroker(ctx context.Context, cfg *config.RabbitMQConfig, logger logging.Logger, concurrency ...int) (*Broker, error) {
+	if logger == nil {
+		logger = logging.ComponentLogger(nil, "broker")
+	}
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	ctx = logging.WithLogger(ctx, logger)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -93,6 +99,7 @@ func NewBroker(ctx context.Context, cfg *config.RabbitMQConfig, concurrency ...i
 
 	brokerCtx, cancel := context.WithCancel(ctx)
 	broker := &Broker{
+		logger:            logger,
 		ctx:               brokerCtx,
 		cancel:            cancel,
 		publisherConn:     publisherConn,

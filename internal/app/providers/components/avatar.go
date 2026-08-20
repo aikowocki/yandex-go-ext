@@ -5,6 +5,7 @@ import (
 
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
 	"github.com/aikowocki/yandex-go-ext/internal/infra/postgres"
+	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 	avatarusecase "github.com/aikowocki/yandex-go-ext/internal/usecase/avatar"
 	imageprocessor "github.com/aikowocki/yandex-go-ext/internal/usecase/image"
 	"github.com/aikowocki/yandex-go-ext/internal/worker"
@@ -25,7 +26,7 @@ type Avatar struct {
 }
 
 // NewAvatar собирает зависимости avatar-подсистемы.
-func NewAvatar(db *postgres.DB, storage contracts.ObjectStorage, messageBroker contracts.MessageBroker) (*Avatar, error) {
+func NewAvatar(db *postgres.DB, storage contracts.ObjectStorage, messageBroker contracts.MessageBroker, avatarLogger logging.Logger, workerLogger logging.Logger) (*Avatar, error) {
 	if db == nil {
 		return nil, fmt.Errorf("database is nil")
 	}
@@ -42,7 +43,7 @@ func NewAvatar(db *postgres.DB, storage contracts.ObjectStorage, messageBroker c
 	outboxRepo := postgres.NewOutboxRepository(db)
 	processor := imageprocessor.NewProcessor()
 	txManager := postgres.NewTxManager(db)
-	avatarUseCase := avatarusecase.New(avatarRepo, thumbnailRepo, storage, messageBroker, processor, outboxRepo, blobRepo, txManager)
+	avatarUseCase := avatarusecase.New(avatarRepo, thumbnailRepo, storage, messageBroker, processor, outboxRepo, blobRepo, txManager, avatarLogger)
 
 	return &Avatar{
 		DB:            db,
@@ -54,6 +55,6 @@ func NewAvatar(db *postgres.DB, storage contracts.ObjectStorage, messageBroker c
 		Processor:     processor,
 		Broker:        messageBroker,
 		Outbox:        outboxRepo,
-		Worker:        worker.NewWorker(avatarRepo, thumbnailRepo, storage, processor, messageBroker, txManager, messageBroker, outboxRepo, blobRepo),
+		Worker:        worker.NewWorker(avatarRepo, thumbnailRepo, storage, processor, messageBroker, txManager, workerLogger, messageBroker, outboxRepo, blobRepo),
 	}, nil
 }

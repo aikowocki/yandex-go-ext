@@ -10,6 +10,7 @@ import (
 	"github.com/aikowocki/yandex-go-ext/internal/config"
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
 	"github.com/aikowocki/yandex-go-ext/internal/domain"
+	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/testsupport"
 	"github.com/google/uuid"
 )
@@ -100,9 +101,10 @@ func TestRunRetentionDeletesExpiredDataAndUnreferencedBlob(t *testing.T) {
 		events:    &events,
 	}
 	storage := &retentionStorageStub{events: &events}
-	runner := New(avatarRetention, thumbnailRetention, blobRetention, storage, nil, passthroughTx{}, config.WorkerConfig{})
+	runner := New(avatarRetention, thumbnailRetention, blobRetention, storage, nil, passthroughTx{}, config.WorkerConfig{}, logging.ComponentLogger(nil, "cronjob"))
+	ctx := testsupport.Context(t)
 
-	if err := runner.RunRetention(context.Background()); err != nil {
+	if err := runner.RunRetention(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if avatarRetention.calls != 1 || thumbnailRetention.calls != 1 {
@@ -117,6 +119,9 @@ func TestRunRetentionDeletesExpiredDataAndUnreferencedBlob(t *testing.T) {
 	if len(events) != 2 || events[0] != "storage" || events[1] != "blob" {
 		t.Fatalf("unexpected deletion order: %v", events)
 	}
+	testsupport.Assert(t).
+		Contains("cronjob hard-deleted expired avatars").
+		HasField("component", "cronjob")
 }
 
 func TestRunReconcileDeletesOnlyUntrackedObjects(t *testing.T) {
@@ -125,14 +130,18 @@ func TestRunReconcileDeletesOnlyUntrackedObjects(t *testing.T) {
 		{Key: "blobs/linked"},
 		{Key: "blobs/orphan"},
 	}}
-	runner := New(nil, nil, blobRetention, storage, storage, passthroughTx{}, config.WorkerConfig{})
+	runner := New(nil, nil, blobRetention, storage, storage, passthroughTx{}, config.WorkerConfig{}, logging.ComponentLogger(nil, "cronjob"))
+	ctx := testsupport.Context(t)
 
-	if err := runner.RunReconcile(context.Background()); err != nil {
+	if err := runner.RunReconcile(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if len(storage.deleted) != 1 || storage.deleted[0] != "blobs/orphan" {
 		t.Fatalf("unexpected storage deletions: %v", storage.deleted)
 	}
+	testsupport.Assert(t).
+		Contains("cronjob deleted storage orphan").
+		HasField("component", "cronjob")
 }
 
 type cronErrorBlobStub struct{ blob *domain.Blob }
@@ -178,7 +187,7 @@ func TestRunnerGuardsAndErrorPaths(t *testing.T) {
 	if err := nilRunner.RunReconcile(context.Background()); err == nil {
 		t.Fatal("nil reconcile runner accepted")
 	}
-	runner := New(cronErrorRetentionStub{}, cronErrorRetentionStub{}, cronErrorBlobStub{}, cronErrorStorageStub{listErr: errors.New("list")}, nil, passthroughTx{}, config.WorkerConfig{})
+	runner := New(cronErrorRetentionStub{}, cronErrorRetentionStub{}, cronErrorBlobStub{}, cronErrorStorageStub{listErr: errors.New("list")}, nil, passthroughTx{}, config.WorkerConfig{}, nil)
 	if err := runner.RunRetention(context.Background()); err == nil {
 		t.Fatal("retention errors were ignored")
 	}
@@ -186,7 +195,7 @@ func TestRunnerGuardsAndErrorPaths(t *testing.T) {
 		t.Fatal("missing storage lister was accepted")
 	}
 	storage := cronErrorStorageStub{listErr: errors.New("list")}
-	runner = New(nil, nil, cronErrorBlobStub{}, storage, storage, passthroughTx{}, config.WorkerConfig{})
+	runner = New(nil, nil, cronErrorBlobStub{}, storage, storage, passthroughTx{}, config.WorkerConfig{}, nil)
 	if err := runner.RunReconcile(context.Background()); err == nil {
 		t.Fatal("reconcile list error was ignored")
 	}
@@ -236,19 +245,19 @@ func TestRunnerRetentionAndReconcileCandidateBranches(t *testing.T) {
 	blob := &domain.Blob{ID: uuid.New(), ObjectKey: "blobs/orphan"}
 	candidates := []*domain.Blob{nil, {ID: uuid.New()}, {ID: uuid.New(), ObjectKey: ""}, blob}
 	retention := cronBranchBlobStub{candidates: candidates, claimBlob: blob, claimed: false}
-	runner := New(nil, nil, retention, cronBranchStorageStub{}, nil, passthroughTx{}, config.WorkerConfig{})
+	runner := New(nil, nil, retention, cronBranchStorageStub{}, nil, passthroughTx{}, config.WorkerConfig{}, nil)
 	if err := runner.RunRetention(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
 	retention = cronBranchBlobStub{candidates: []*domain.Blob{blob}, claimBlob: blob, claimed: true, claimErr: errors.New("claim")}
-	runner = New(nil, nil, retention, cronBranchStorageStub{}, nil, passthroughTx{}, config.WorkerConfig{})
+	runner = New(nil, nil, retention, cronBranchStorageStub{}, nil, passthroughTx{}, config.WorkerConfig{}, nil)
 	if err := runner.RunRetention(context.Background()); err == nil {
 		t.Fatal("claim error ignored")
 	}
 
 	retention = cronBranchBlobStub{candidates: []*domain.Blob{blob}, claimBlob: blob, claimed: true, deleteErr: errors.New("delete row")}
-	runner = New(nil, nil, retention, cronBranchStorageStub{}, nil, passthroughTx{}, config.WorkerConfig{})
+	runner = New(nil, nil, retention, cronBranchStorageStub{}, nil, passthroughTx{}, config.WorkerConfig{}, nil)
 	if err := runner.RunRetention(context.Background()); err == nil {
 		t.Fatal("blob row delete error ignored")
 	}
@@ -256,7 +265,7 @@ func TestRunnerRetentionAndReconcileCandidateBranches(t *testing.T) {
 	objects := []contracts.StoredObject{{Key: "linked"}, {Key: "orphan"}}
 	retention = cronBranchBlobStub{known: true, hasErr: errors.New("check")}
 	storage := cronBranchStorageStub{objects: objects, deleteErr: errors.New("delete object")}
-	runner = New(nil, nil, retention, storage, storage, passthroughTx{}, config.WorkerConfig{})
+	runner = New(nil, nil, retention, storage, storage, passthroughTx{}, config.WorkerConfig{}, nil)
 	if err := runner.RunReconcile(context.Background()); err == nil {
 		t.Fatal("reconcile object errors ignored")
 	}
@@ -271,14 +280,14 @@ func TestRunnerRetentionAndReconcileSuccessPaths(t *testing.T) {
 		claimed:    true,
 	}
 	storage := cronBranchStorageStub{}
-	runner := New(nil, nil, retention, storage, storage, passthroughTx{}, config.WorkerConfig{})
+	runner := New(nil, nil, retention, storage, storage, passthroughTx{}, config.WorkerConfig{}, nil)
 	if err := runner.RunRetention(ctx); err != nil {
 		t.Fatalf("retention success path: %v", err)
 	}
 
 	retention = cronBranchBlobStub{}
 	storage = cronBranchStorageStub{objects: []contracts.StoredObject{{Key: "blobs/orphan"}}}
-	runner = New(nil, nil, retention, storage, storage, passthroughTx{}, config.WorkerConfig{})
+	runner = New(nil, nil, retention, storage, storage, passthroughTx{}, config.WorkerConfig{}, nil)
 	if err := runner.RunReconcile(ctx); err != nil {
 		t.Fatalf("reconcile success path: %v", err)
 	}

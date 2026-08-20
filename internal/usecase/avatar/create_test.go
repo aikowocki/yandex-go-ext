@@ -151,7 +151,7 @@ func TestUseCaseCreateUsesSameIDInStorageKey(t *testing.T) {
 	repo := &avatarRepoStub{}
 	storage := &storageStub{}
 	publisher := &publisherStub{}
-	useCase := New(repo, nil, storage, publisher, imageprocessor.NewProcessor(), nil, nil, passthroughTx{})
+	useCase := New(repo, nil, storage, publisher, imageprocessor.NewProcessor(), nil, nil, passthroughTx{}, nil)
 	avatar, err := useCase.Create(context.Background(), "user-1", multipartFileHeader(t, content.Bytes()))
 	if err != nil {
 		t.Fatal(err)
@@ -173,7 +173,7 @@ func TestUseCaseCreateUsesSameIDInStorageKey(t *testing.T) {
 
 func TestCreateAvatarRejectsOversizedFile(t *testing.T) {
 	repo := &avatarRepoStub{}
-	useCase := New(repo, nil, &storageStub{}, &publisherStub{}, imageprocessor.NewProcessor(), nil, nil, passthroughTx{})
+	useCase := New(repo, nil, &storageStub{}, &publisherStub{}, imageprocessor.NewProcessor(), nil, nil, passthroughTx{}, nil)
 	file := &multipart.FileHeader{Filename: "large.jpg", Size: maxAvatarSize + 1, Header: make(textproto.MIMEHeader)}
 	file.Header.Set("Content-Type", "image/jpeg")
 	_, err := useCase.Create(context.Background(), "user-1", file)
@@ -330,7 +330,7 @@ func TestHashSource(t *testing.T) {
 func TestUseCaseReadOperations(t *testing.T) {
 	id := uuid.New()
 	repo := &avatarRepoStub{avatar: &domain.Avatar{ID: id, UserID: "user-1"}}
-	uc := New(repo, nil, nil, nil, nil, nil, nil, passthroughTx{})
+	uc := New(repo, nil, nil, nil, nil, nil, nil, passthroughTx{}, nil)
 	if got, err := uc.Get(context.Background(), id); err != nil || got.ID != id {
 		t.Fatalf("Get() = %+v, %v", got, err)
 	}
@@ -405,7 +405,7 @@ func TestCreateRejectsValidationAndDecodeErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			uc := New(&avatarRepoStub{}, nil, &storageStub{}, &publisherStub{}, tt.processor, nil, nil, passthroughTx{})
+			uc := New(&avatarRepoStub{}, nil, &storageStub{}, &publisherStub{}, tt.processor, nil, nil, passthroughTx{}, nil)
 			_, err := uc.Create(context.Background(), tt.userID, tt.file, tt.crop)
 			if err == nil {
 				t.Fatal("invalid create request accepted")
@@ -420,7 +420,7 @@ func TestCreateRejectsValidationAndDecodeErrors(t *testing.T) {
 func TestCreateMarksUploadFailure(t *testing.T) {
 	file := multipartFileHeader(t, []byte("jpeg content"))
 	processor := createProcessorStub{decoded: image.NewRGBA(image.Rect(0, 0, 20, 20)), format: "jpeg"}
-	uc := New(&avatarRepoStub{}, nil, createFailStorage{err: errors.New("storage down")}, &publisherStub{}, processor, nil, nil, passthroughTx{})
+	uc := New(&avatarRepoStub{}, nil, createFailStorage{err: errors.New("storage down")}, &publisherStub{}, processor, nil, nil, passthroughTx{}, nil)
 	_, err := uc.Create(context.Background(), "user-1", file)
 	if err == nil || !strings.Contains(err.Error(), "upload original") {
 		t.Fatalf("upload error = %v", err)

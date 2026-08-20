@@ -24,6 +24,7 @@ func (c *Container) Run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	defer stop()
+	ctx = logging.WithLogger(ctx, c.logger)
 
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {
@@ -53,6 +54,7 @@ func (c *Container) Run() error {
 }
 
 func (c *Container) shutdown(ctx context.Context, pprofServer *http.Server) {
+	ctx = logging.WithLogger(ctx, c.logger)
 	if pprofServer != nil {
 		_ = pprofServer.Shutdown(ctx)
 	}

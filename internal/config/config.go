@@ -6,12 +6,13 @@ import (
 
 // Config содержит настройки всех компонентов приложения.
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database"`
-	S3       S3Config       `yaml:"s3"`
-	Broker   BrokerConfig   `yaml:"broker"`
-	Worker   WorkerConfig   `yaml:"worker"`
-	Log      LogConfig      `yaml:"log"`
+	Server        ServerConfig        `yaml:"server"`
+	Database      DatabaseConfig      `yaml:"database"`
+	S3            S3Config            `yaml:"s3"`
+	Broker        BrokerConfig        `yaml:"broker"`
+	Worker        WorkerConfig        `yaml:"worker"`
+	Log           LogConfig           `yaml:"log"`
+	Observability ObservabilityConfig `yaml:"observability"`
 }
 
 // ServerConfig содержит настройки HTTP-сервера.
@@ -88,4 +89,14 @@ type LogConfig struct {
 	Backend string `yaml:"backend" env:"LOG_BACKEND" env-default:"slog"`
 	Level   string `yaml:"level" env:"LOG_LEVEL" env-default:"info"`
 	Format  string `yaml:"format" env:"LOG_FORMAT" env-default:"json"`
+}
+
+// ObservabilityConfig содержит настройки экспорта телеметрии OpenTelemetry.
+type ObservabilityConfig struct {
+	Enabled          bool    `yaml:"enabled" env:"OTEL_ENABLED" env-default:"false"`
+	OTLPEndpoint     string  `yaml:"otlp_endpoint" env:"OTEL_EXPORTER_OTLP_ENDPOINT" env-default:"http://localhost:4317"`
+	OTLPInsecure     bool    `yaml:"otlp_insecure" env:"OTEL_EXPORTER_OTLP_INSECURE" env-default:"true"`
+	TraceSampleRatio float64 `yaml:"trace_sample_ratio" env:"OTEL_TRACES_SAMPLER_ARG" env-default:"1.0"`
+	ServiceVersion   string  `yaml:"service_version" env:"OTEL_SERVICE_VERSION" env-default:"unknown"`
+	Environment      string  `yaml:"environment" env:"OTEL_ENVIRONMENT" env-default:"development"`
 }

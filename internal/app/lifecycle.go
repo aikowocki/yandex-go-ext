@@ -76,6 +76,13 @@ func (c *Container) Close() error {
 		if c.DB != nil {
 			c.DB.Close()
 		}
+		if c.telemetry != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+			if err := c.telemetry.Shutdown(shutdownCtx); err != nil {
+				c.closeErr = errors.Join(c.closeErr, err)
+			}
+			cancel()
+		}
 		if c.logger != nil {
 			if err := c.logger.Sync(); err != nil {
 				c.closeErr = errors.Join(c.closeErr, err)

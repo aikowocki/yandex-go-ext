@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	container, err := app.New(context.Background())
+	container, err := app.New(context.Background(), "gophprofile-server")
 	if err != nil {
 		log.Fatal("initialize application:", err)
 	}

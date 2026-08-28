@@ -71,6 +71,12 @@ func readEnvironment(cfg *Config) error {
 		"GOPHPROFILE_LOG_BACKEND":                     "LOG_BACKEND",
 		"GOPHPROFILE_LOG_LEVEL":                       "LOG_LEVEL",
 		"GOPHPROFILE_LOG_FORMAT":                      "LOG_FORMAT",
+		"GOPHPROFILE_OBSERVABILITY_ENABLED":           "OTEL_ENABLED",
+		"GOPHPROFILE_OTLP_ENDPOINT":                   "OTEL_EXPORTER_OTLP_ENDPOINT",
+		"GOPHPROFILE_OTLP_INSECURE":                   "OTEL_EXPORTER_OTLP_INSECURE",
+		"GOPHPROFILE_TRACE_SAMPLE_RATIO":              "OTEL_TRACES_SAMPLER_ARG",
+		"GOPHPROFILE_SERVICE_VERSION":                 "OTEL_SERVICE_VERSION",
+		"GOPHPROFILE_ENVIRONMENT":                     "OTEL_ENVIRONMENT",
 	}
 
 	restore := make([]func(), 0, len(aliases))

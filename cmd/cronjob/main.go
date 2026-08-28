@@ -7,9 +7,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/aikowocki/yandex-go-ext/internal/app/providers"
 	"github.com/aikowocki/yandex-go-ext/internal/cronjob"
+	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	"github.com/aikowocki/yandex-go-ext/internal/infra/postgres"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 )
@@ -40,6 +42,16 @@ func run() error {
 	defer func() {
 		restoreLogger()
 		_ = logger.Sync()
+	}()
+
+	telemetry, err := observability.New(ctx, cfg.Observability, "gophprofile-cronjob")
+	if err != nil {
+		return fmt.Errorf("initialize observability: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = telemetry.Shutdown(shutdownCtx)
 	}()
 
 	db, err := providers.NewDatabase(ctx, cfg)

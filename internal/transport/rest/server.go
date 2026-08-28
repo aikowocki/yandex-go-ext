@@ -15,6 +15,7 @@ import (
 	avatarusecase "github.com/aikowocki/yandex-go-ext/internal/usecase/avatar"
 	"github.com/labstack/echo/v4"
 	echoMiddleware "github.com/labstack/echo/v4/middleware"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
 )
 
 // Server обслуживает HTTP-запросы приложения.
@@ -51,6 +52,9 @@ func NewServer(
 
 	e := echo.New()
 	e.HideBanner = true
+	e.Use(otelecho.Middleware("gophprofile-server", otelecho.WithSkipper(func(c echo.Context) bool {
+		return c.Path() == "/health"
+	})))
 	e.Use(restmiddleware.RequestLogger(logger))
 	e.Use(restmiddleware.Recovery())
 	e.Use(restmiddleware.CORS())

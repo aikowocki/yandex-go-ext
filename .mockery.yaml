@@ -1,0 +1,17 @@
+with-expecter: true
+disable-version-string: true
+resolve-type-alias: false
+issue-845-fix: true
+dir: internal/contracts/mocks
+outpkg: mocks
+filename: "mock_{{.InterfaceNameSnake}}.gen.go"
+packages:
+  github.com/aikowocki/yandex-go-ext/internal/contracts:
+    interfaces:
+      AvatarRepository:
+      ThumbnailRepository:
+      ObjectStorage:
+      MessageBroker:
+      Publisher:
+      Consumer:
+      ImageProcessor:

@@ -1,0 +1,222 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gophprofile
+      POSTGRES_PASSWORD: gophprofile
+      POSTGRES_DB: gophprofile
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gophprofile -d gophprofile"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-gophprofile}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-gophprofile-dev}
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      start_period: 10s
+      retries: 20
+
+  kafka:
+    image: apache/kafka:3.9.0
+    hostname: kafka
+    ports:
+      - "29092:29092"
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: "1"
+      KAFKA_MIN_INSYNC_REPLICAS: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      start_period: 20s
+      retries: 20
+
+  kafka-init:
+    image: apache/kafka:3.9.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic avatar.uploaded --partitions 3 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000 &&
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic avatar.deleted --partitions 3 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000 &&
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic avatar.uploaded.dlq --partitions 3 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=2592000000 &&
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic avatar.deleted.dlq --partitions 3 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=2592000000 &&
+        /opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka:9092 --alter --entity-type topics --entity-name avatar.uploaded --add-config cleanup.policy=delete,retention.ms=604800000 &&
+        /opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka:9092 --alter --entity-type topics --entity-name avatar.deleted --add-config cleanup.policy=delete,retention.ms=604800000 &&
+        /opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka:9092 --alter --entity-type topics --entity-name avatar.uploaded.dlq --add-config cleanup.policy=delete,retention.ms=2592000000 &&
+        /opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka:9092 --alter --entity-type topics --entity-name avatar.deleted.dlq --add-config cleanup.policy=delete,retention.ms=2592000000
+    restart: "no"
+
+  server:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.server
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      # rabbitmq:
+      #   condition: service_healthy
+      # kafka:
+      #   condition: service_healthy
+    environment:
+      ENV: dev
+      SERVER_HOST: 0.0.0.0
+      DATABASE_URL: postgres://gophprofile:gophprofile@postgres:5432/gophprofile?sslmode=disable
+      S3_ENDPOINT: minio:9000
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      BROKER_TYPE: kafka
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_GROUP_ID: gophprofile-workers
+      KAFKA_MAX_ATTEMPTS: 5
+      KAFKA_DLQ_SUFFIX: .dlq
+      KAFKA_SESSION_TIMEOUT: 10s
+      KAFKA_HEARTBEAT_INTERVAL: 3s
+      KAFKA_FETCH_MIN_BYTES: 1
+      KAFKA_FETCH_MAX_WAIT: 250ms
+#      RABBITMQ_URL: amqp://gophprofile:gophprofile-dev@rabbitmq:5672/
+#      RABBITMQ_EXCHANGE: avatars
+#      RABBITMQ_RETRY_DELAY: 30s
+#      RABBITMQ_MAX_ATTEMPTS: 5
+#      RABBITMQ_QUEUE_TYPE: classic
+      LOG_FORMAT: json
+    ports:
+      - "8080:8080"
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      # rabbitmq:
+      #   condition: service_healthy
+      # kafka:
+      #   condition: service_healthy
+    environment:
+      ENV: dev
+      DATABASE_URL: postgres://gophprofile:gophprofile@postgres:5432/gophprofile?sslmode=disable
+      S3_ENDPOINT: minio:9000
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      BROKER_TYPE: kafka
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_GROUP_ID: gophprofile-workers
+      KAFKA_MAX_ATTEMPTS: 5
+      KAFKA_DLQ_SUFFIX: .dlq
+      KAFKA_SESSION_TIMEOUT: 10s
+      KAFKA_HEARTBEAT_INTERVAL: 3s
+      KAFKA_FETCH_MIN_BYTES: 1
+      KAFKA_FETCH_MAX_WAIT: 250ms
+      #      RABBITMQ_URL: amqp://gophprofile:gophprofile-dev@rabbitmq:5672/
+      #      RABBITMQ_EXCHANGE: avatars
+      #      RABBITMQ_RETRY_DELAY: 30s
+      #      RABBITMQ_MAX_ATTEMPTS: 5
+      #      RABBITMQ_QUEUE_TYPE: classic
+      WORKER_CONCURRENCY: 4
+      LOG_FORMAT: json
+
+  cronjob:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.cronjob
+    profiles:
+      - cronjob
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      ENV: dev
+      DATABASE_URL: postgres://gophprofile:gophprofile@postgres:5432/gophprofile?sslmode=disable
+      S3_ENDPOINT: minio:9000
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      LOG_FORMAT: json
+
+  cronjob-scheduler:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile.cronjob
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    entrypoint: ["/app/cronjob-scheduler.sh"]
+    environment:
+      ENV: dev
+      DATABASE_URL: postgres://gophprofile:gophprofile@postgres:5432/gophprofile?sslmode=disable
+      S3_ENDPOINT: minio:9000
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      LOG_FORMAT: json
+
+volumes:
+  postgres-data:
+  minio-data:
+  rabbitmq-data:
+  kafka-data:
+

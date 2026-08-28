@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avatar Upload</title>
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+
+<body class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+<div class="container mx-auto px-4 py-8 max-w-2xl">
+    <div class="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl border border-white/20 overflow-hidden">
+        <header class="bg-gradient-to-r from-purple-600 to-blue-600 p-6">
+            <h1 class="text-3xl font-bold text-white text-center">Avatar Upload Service</h1>
+            <p class="text-white/80 text-center mt-2">Upload your avatar image</p>
+        </header>
+
+        <main class="p-6 space-y-6">
+            <form id="uploadForm" class="space-y-4">
+                <div>
+                    <label for="userId" class="block text-sm font-medium text-white mb-2">
+                        User ID <span class="text-red-400">*</span>
+                    </label>
+                    <input type="text" id="userId" name="userId" required placeholder="Enter your user ID"
+                           class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
+                </div>
+
+                <div>
+                    <label for="image" class="block text-sm font-medium text-white mb-2">
+                        Choose Image <span class="text-red-400">*</span>
+                    </label>
+                    <div class="relative">
+                        <input type="file" id="image" name="image" accept="image/*" required
+                               class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
+                    </div>
+                    <div id="cropPanel" class="mt-4 hidden rounded-xl border border-white/15 bg-black/20 p-4">
+                        <div class="mx-auto max-w-md">
+                            <canvas id="cropCanvas" width="360" height="360" class="mx-auto w-full max-w-[360px] touch-none rounded-full bg-black/40 shadow-lg"></canvas>
+                            <p class="mt-3 text-center text-sm text-white/70">Drag the image and use zoom to select the circular avatar area.</p>
+                            <label for="zoom" class="mt-3 block text-sm font-medium text-white">
+                                Zoom
+                                <input id="zoom" type="range" min="1" max="3" step="0.01" value="1" class="mt-2 w-full accent-purple-500">
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" id="submitBtn"
+                        class="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white font-semibold py-3 px-6 rounded-lg shadow-lg hover:from-purple-700 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-transparent transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98]">
+                    <span id="btnText">Upload Avatar</span>
+                    <span id="btnLoader" class="hidden">
+              <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg"
+                   fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                </path>
+              </svg>
+              Uploading...
+            </span>
+                </button>
+            </form>
+
+            <div id="errorMessage" class="hidden bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-lg">
+            </div>
+        </main>
+    </div>
+</div>
+
+<script>
+    const form = document.getElementById('uploadForm');
+    const imageInput = document.getElementById('image');
+    const cropPanel = document.getElementById('cropPanel');
+    const cropCanvas = document.getElementById('cropCanvas');
+    const cropContext = cropCanvas.getContext('2d');
+    const zoomInput = document.getElementById('zoom');
+    const cropState = {
+        image: null,
+        baseScale: 1,
+        scale: 1,
+        offsetX: 0,
+        offsetY: 0,
+        dragging: false,
+        pointerX: 0,
+        pointerY: 0
+    };
+    const submitBtn = document.getElementById('submitBtn');
+    const btnText = document.getElementById('btnText');
+    const btnLoader = document.getElementById('btnLoader');
+    const errorMessage = document.getElementById('errorMessage');
+    const userIdInput = document.getElementById('userId');
+    const query = new URLSearchParams(window.location.search);
+    const editAvatarId = query.get('edit_avatar_id');
+    const editMode = Boolean(editAvatarId);
+    const initialUserId = query.get('user_id');
+    if (initialUserId) userIdInput.value = initialUserId;
+
+    function loadCropImage(source, crop) {
+        return new Promise((resolve, reject) => {
+            const image = new Image();
+            image.onload = function () {
+                cropState.image = image;
+                cropState.baseScale = Math.max(cropCanvas.width / image.naturalWidth, cropCanvas.height / image.naturalHeight);
+                cropState.scale = cropState.baseScale;
+                cropState.offsetX = 0;
+                cropState.offsetY = 0;
+                if (crop && crop.size > 0) {
+                    const requestedZoom = cropCanvas.width / crop.size / cropState.baseScale;
+                    const zoom = Math.min(3, Math.max(1, requestedZoom));
+                    zoomInput.value = String(zoom);
+                    cropState.scale = cropState.baseScale * zoom;
+                    cropState.offsetX = cropCanvas.width / 2 - (crop.x + crop.size / 2) * cropState.scale;
+                    cropState.offsetY = cropCanvas.height / 2 - (crop.y + crop.size / 2) * cropState.scale;
+                    clampCropOffset();
+                    drawCropper();
+                } else {
+                    zoomInput.value = '1';
+                    setCropZoom(1);
+                }
+                cropPanel.classList.remove('hidden');
+                resolve();
+            };
+            image.onerror = () => reject(new Error('Image could not be loaded'));
+            image.src = source;
+        });
+    }
+
+    imageInput.addEventListener('change', function (event) {
+        const file = event.target.files[0];
+        if (!file || !file.type.startsWith('image/')) {
+            cropState.image = null;
+            cropPanel.classList.add('hidden');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = event => loadCropImage(event.target.result).catch(error => showError(error.message));
+        reader.readAsDataURL(file);
+    });
+
+    async function loadEditAvatar() {
+        imageInput.required = false;
+        imageInput.closest('.relative').classList.add('hidden');
+        userIdInput.value = query.get('user_id') || '';
+        userIdInput.readOnly = true;
+        btnText.textContent = 'Save thumbnail crop';
+        btnLoader.lastChild.textContent = ' Saving...';
+        try {
+            const response = await fetch(`/api/v1/avatars/${encodeURIComponent(editAvatarId)}/metadata`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const avatar = await response.json();
+            if (!userIdInput.value) userIdInput.value = avatar.user_id || '';
+            await loadCropImage(`/api/v1/avatars/${encodeURIComponent(editAvatarId)}?size=original`, avatar.crop);
+        } catch (error) {
+            showError(`Failed to load avatar: ${error.message}`);
+        }
+    }
+
+    function setCropZoom(zoom) {
+        if (!cropState.image) return;
+        const centerX = (cropCanvas.width / 2 - cropState.offsetX) / cropState.scale;
+        const centerY = (cropCanvas.height / 2 - cropState.offsetY) / cropState.scale;
+        cropState.scale = cropState.baseScale * Number(zoom);
+        cropState.offsetX = cropCanvas.width / 2 - centerX * cropState.scale;
+        cropState.offsetY = cropCanvas.height / 2 - centerY * cropState.scale;
+        clampCropOffset();
+        drawCropper();
+    }
+
+    function clampCropOffset() {
+        const imageWidth = cropState.image.naturalWidth * cropState.scale;
+        const imageHeight = cropState.image.naturalHeight * cropState.scale;
+        cropState.offsetX = Math.min(0, Math.max(cropCanvas.width - imageWidth, cropState.offsetX));
+        cropState.offsetY = Math.min(0, Math.max(cropCanvas.height - imageHeight, cropState.offsetY));
+    }
+
+    function drawCropper() {
+        if (!cropState.image) return;
+        cropContext.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
+        cropContext.fillStyle = '#111827';
+        cropContext.fillRect(0, 0, cropCanvas.width, cropCanvas.height);
+        cropContext.drawImage(
+            cropState.image,
+            cropState.offsetX,
+            cropState.offsetY,
+            cropState.image.naturalWidth * cropState.scale,
+            cropState.image.naturalHeight * cropState.scale
+        );
+        cropContext.save();
+        cropContext.fillStyle = 'rgba(0, 0, 0, 0.55)';
+        cropContext.beginPath();
+        cropContext.rect(0, 0, cropCanvas.width, cropCanvas.height);
+        cropContext.arc(cropCanvas.width / 2, cropCanvas.height / 2, cropCanvas.width / 2 - 3, 0, Math.PI * 2, true);
+        cropContext.fill('evenodd');
+        cropContext.restore();
+        cropContext.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+        cropContext.lineWidth = 3;
+        cropContext.beginPath();
+        cropContext.arc(cropCanvas.width / 2, cropCanvas.height / 2, cropCanvas.width / 2 - 3, 0, Math.PI * 2);
+        cropContext.stroke();
+    }
+
+    function getCropValues() {
+        const size = cropCanvas.width / cropState.scale;
+        return {
+            crop_x: Math.max(0, (0 - cropState.offsetX) / cropState.scale),
+            crop_y: Math.max(0, (0 - cropState.offsetY) / cropState.scale),
+            crop_size: size
+        };
+    }
+
+    zoomInput.addEventListener('input', () => setCropZoom(zoomInput.value));
+    cropCanvas.addEventListener('pointerdown', event => {
+        if (!cropState.image) return;
+        cropState.dragging = true;
+        cropState.pointerX = event.clientX;
+        cropState.pointerY = event.clientY;
+        cropCanvas.setPointerCapture(event.pointerId);
+    });
+    cropCanvas.addEventListener('pointermove', event => {
+        if (!cropState.dragging) return;
+        cropState.offsetX += event.clientX - cropState.pointerX;
+        cropState.offsetY += event.clientY - cropState.pointerY;
+        cropState.pointerX = event.clientX;
+        cropState.pointerY = event.clientY;
+        clampCropOffset();
+        drawCropper();
+    });
+    cropCanvas.addEventListener('pointerup', event => {
+        cropState.dragging = false;
+        cropCanvas.releasePointerCapture(event.pointerId);
+    });
+    cropCanvas.addEventListener('pointercancel', () => { cropState.dragging = false; });
+
+    form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        const userId = userIdInput.value.trim();
+        const imageFile = imageInput.files[0];
+
+        if (!userId || (!editMode && !imageFile) || !cropState.image) {
+            showError('Please choose an image and select a crop area');
+            return;
+        }
+
+        setLoading(true);
+        hideError();
+
+        const crop = getCropValues();
+        let response;
+        try {
+            if (editMode) {
+                response = await fetch(`/api/v1/avatars/${encodeURIComponent(editAvatarId)}/crop`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-User-ID': userId
+                    },
+                    body: JSON.stringify(crop)
+                });
+            } else {
+                const formData = new FormData();
+                formData.append('file', imageFile);
+                formData.append('crop_x', String(crop.crop_x));
+                formData.append('crop_y', String(crop.crop_y));
+                formData.append('crop_size', String(crop.crop_size));
+                response = await fetch('/api/v1/avatars', {
+                    method: 'POST',
+                    headers: { 'X-User-ID': userId },
+                    body: formData
+                });
+            }
+
+            if (!response.ok) {
+                showError(`Request failed: ${response.status} ${response.statusText}`);
+                return;
+            }
+            const result = await response.json();
+            if (!result.id) {
+                showError('Avatar was saved, but its identifier was not returned');
+                return;
+            }
+            btnLoader.lastChild.textContent = ' Preparing thumbnails...';
+            await waitForThumbnails(result.id);
+            window.location.assign(`/web/gallery/${encodeURIComponent(userId)}`);
+
+        } catch (error) {
+            showError(error.message || 'Failed to prepare avatar thumbnails');
+        } finally {
+            setLoading(false);
+        }
+    });
+
+    async function waitForThumbnails(avatarId) {
+        for (let attempt = 0; attempt < 60; attempt++) {
+            const metadataResponse = await fetch(`/api/v1/avatars/${encodeURIComponent(avatarId)}/metadata`);
+            if (metadataResponse.ok) {
+                const metadata = await metadataResponse.json();
+                if (metadata.status === 'completed') return;
+                if (metadata.status === 'failed') {
+                    throw new Error('Thumbnail processing failed');
+                }
+            }
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        throw new Error('Thumbnail processing is taking too long. Please open the gallery again shortly.');
+    }
+
+    function setLoading(loading) {
+        if (loading) {
+            submitBtn.disabled = true;
+            btnText.classList.add('hidden');
+            btnLoader.classList.remove('hidden');
+        } else {
+            submitBtn.disabled = false;
+            btnText.classList.remove('hidden');
+            btnLoader.classList.add('hidden');
+        }
+    }
+
+    function showError(message) {
+        errorMessage.textContent = message;
+        errorMessage.classList.remove('hidden');
+    }
+
+    function hideError() {
+        errorMessage.classList.add('hidden');
+    }
+
+
+    if (editMode) loadEditAvatar();
+</script>
+</body>
+
+</html>

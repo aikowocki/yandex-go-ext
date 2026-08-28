@@ -1,0 +1,21 @@
+# Конфигурация github.com/vladopajic/go-test-coverage
+# Запуск: task coverage (локально) или в CI через vladopajic/go-test-coverage@v2
+
+profile: coverage.out
+
+threshold:
+  # Минимальный порог на файл — не задаём отдельно, чтобы не блокировать
+  # из-за отдельных edge-кейсов; общий порог по проекту важнее.
+  file: 0
+  package: 0
+  total: 70
+
+# Исключаем весь сгенерированный код: protobuf/grpc, sqlc, mockery-моки.
+exclude:
+  paths:
+    - api/proto/gen/          # buf/protoc-gen-go, protoc-gen-go-grpc
+    - internal/infra/postgres/gen/    # sqlc
+    - /mocks/                 # mockery
+    - \.pb\.go$
+    - _grpc\.pb\.go$
+    - cmd/seed

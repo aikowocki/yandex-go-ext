@@ -1,0 +1,4 @@
+ALTER TABLE avatars
+    DROP COLUMN IF EXISTS crop_size,
+    DROP COLUMN IF EXISTS crop_y,
+    DROP COLUMN IF EXISTS crop_x;

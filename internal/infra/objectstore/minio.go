@@ -62,7 +62,9 @@ func isBucketAlreadyOwned(err error) bool {
 }
 
 // Upload загружает объект в MinIO.
-func (s *MinIO) Upload(ctx context.Context, key string, data io.Reader, size int64, contentType string) error {
+func (s *MinIO) Upload(ctx context.Context, key string, data io.Reader, size int64, contentType string) (err error) {
+	ctx, span := startStorageSpan(ctx, "upload")
+	defer func() { finishStorageSpan(span, err) }()
 	if _, err := s.client.PutObject(ctx, s.bucket, key, data, size, minio.PutObjectOptions{ContentType: contentType}); err != nil {
 		return fmt.Errorf("upload object %q: %w", key, err)
 	}
@@ -71,15 +73,19 @@ func (s *MinIO) Upload(ctx context.Context, key string, data io.Reader, size int
 
 // Download открывает объект из MinIO.
 func (s *MinIO) Download(ctx context.Context, key string) (io.ReadCloser, error) {
+	ctx, span := startStorageSpan(ctx, "download")
 	object, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
 	if err != nil {
+		finishStorageSpan(span, err)
 		return nil, fmt.Errorf("download object %q: %w", key, err)
 	}
-	return object, nil
+	return &tracedReadCloser{ReadCloser: object, span: span}, nil
 }
 
 // Delete удаляет объект из MinIO.
-func (s *MinIO) Delete(ctx context.Context, key string) error {
+func (s *MinIO) Delete(ctx context.Context, key string) (err error) {
+	ctx, span := startStorageSpan(ctx, "delete")
+	defer func() { finishStorageSpan(span, err) }()
 	if err := s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{}); err != nil {
 		return fmt.Errorf("delete object %q: %w", key, err)
 	}
@@ -87,7 +93,9 @@ func (s *MinIO) Delete(ctx context.Context, key string) error {
 }
 
 // GetURL создаёт временную ссылку на объект.
-func (s *MinIO) GetURL(ctx context.Context, key string, expires time.Duration) (string, error) {
+func (s *MinIO) GetURL(ctx context.Context, key string, expires time.Duration) (result string, err error) {
+	ctx, span := startStorageSpan(ctx, "get_url")
+	defer func() { finishStorageSpan(span, err) }()
 	if expires <= 0 {
 		return "", fmt.Errorf("url expiration must be positive")
 	}
@@ -99,7 +107,9 @@ func (s *MinIO) GetURL(ctx context.Context, key string, expires time.Duration) (
 }
 
 // HealthCheck проверяет доступность bucket-а MinIO.
-func (s *MinIO) HealthCheck(ctx context.Context) error {
+func (s *MinIO) HealthCheck(ctx context.Context) (err error) {
+	ctx, span := startStorageSpan(ctx, "health_check")
+	defer func() { finishStorageSpan(span, err) }()
 	if s == nil || s.client == nil {
 		return fmt.Errorf("object storage client is not initialized")
 	}
@@ -114,7 +124,9 @@ func (s *MinIO) HealthCheck(ctx context.Context) error {
 }
 
 // List возвращает объекты MinIO по префиксу.
-func (s *MinIO) List(ctx context.Context, prefix string, olderThan time.Time) ([]contracts.StoredObject, error) {
+func (s *MinIO) List(ctx context.Context, prefix string, olderThan time.Time) (result []contracts.StoredObject, err error) {
+	ctx, span := startStorageSpan(ctx, "list")
+	defer func() { finishStorageSpan(span, err) }()
 	if s == nil || s.client == nil {
 		return nil, fmt.Errorf("list storage objects: storage client is not initialized")
 	}

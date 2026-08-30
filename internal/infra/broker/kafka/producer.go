@@ -7,17 +7,24 @@ import (
 
 	"github.com/IBM/sarama"
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
+	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 )
 
 // Publish отправляет сообщение в Kafka.
-func (b *Broker) Publish(ctx context.Context, topic string, msg *contracts.Message) error {
+func (b *Broker) Publish(ctx context.Context, topic string, msg *contracts.Message) (err error) {
 	if msg == nil || topic == "" {
 		return fmt.Errorf("topic and message are required")
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if msg.Headers == nil {
+		msg.Headers = make(map[string]string)
+	}
+	ctx, span := observability.StartProducerSpan(ctx, "kafka", topic)
+	defer func() { observability.FinishMessagingSpan(span, err) }()
+	observability.InjectMessageContext(ctx, msg.Headers)
 
 	headers := make([]sarama.RecordHeader, 0, len(msg.Headers)+2)
 	headers = append(headers,

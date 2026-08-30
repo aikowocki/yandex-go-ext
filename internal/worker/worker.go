@@ -17,6 +17,7 @@ import (
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
 	"github.com/aikowocki/yandex-go-ext/internal/domain"
 	"github.com/aikowocki/yandex-go-ext/internal/domain/events"
+	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 	"github.com/disintegration/imaging"
 	"github.com/google/uuid"
@@ -92,7 +93,9 @@ func (w *Worker) Start(ctx context.Context) error {
 	return nil
 }
 
-func (w *Worker) handleAvatarUploaded(ctx context.Context, msg *contracts.Message) error {
+func (w *Worker) handleAvatarUploaded(ctx context.Context, msg *contracts.Message) (err error) {
+	ctx, span := startWorkerSpan(ctx, "avatar.process")
+	defer func() { finishWorkerSpan(span, err) }()
 	ctx = logging.WithLogger(ctx, w.logger)
 	var event events.AvatarUploadedEvent
 	if err := json.Unmarshal(msg.Payload, &event); err != nil {
@@ -211,7 +214,9 @@ func applyAvatarCrop(img image.Image, crop domain.AvatarCrop) image.Image {
 	return imaging.Crop(img, image.Rect(bounds.Min.X+x, bounds.Min.Y+y, bounds.Min.X+x+size, bounds.Min.Y+y+size))
 }
 
-func (w *Worker) createThumbnail(ctx context.Context, avatar *domain.Avatar, img image.Image, size domain.ThumbnailSize, sourceFormat string) error {
+func (w *Worker) createThumbnail(ctx context.Context, avatar *domain.Avatar, img image.Image, size domain.ThumbnailSize, sourceFormat string) (err error) {
+	ctx, span := startWorkerSpan(ctx, "thumbnail.create")
+	defer func() { finishWorkerSpan(span, err) }()
 	width, height, ok := size.Dimensions()
 	if !ok {
 		return fmt.Errorf("unsupported thumbnail size: %s", size)
@@ -351,9 +356,10 @@ func (w *Worker) flushOutbox(ctx context.Context) {
 		return
 	}
 	for _, event := range outboxEvents {
-
+		eventCtx := observability.ExtractMessageContext(ctx, event.Headers)
 		message := contracts.NewMessageWithID(event.ID, event.Topic, event.Payload)
-		if err := w.publisher.Publish(ctx, event.Topic, message); err != nil {
+		message.Headers = observability.CloneHeaders(event.Headers)
+		if err := w.publisher.Publish(eventCtx, event.Topic, message); err != nil {
 			nextAttempt := time.Now().UTC().Add(outboxRetryDelay(event.Attempts + 1))
 			if markErr := w.outbox.MarkFailed(ctx, event.ID, err.Error(), nextAttempt); markErr != nil {
 				logging.Warn(ctx, "failed to update outbox retry state", logging.Err(markErr), logging.String("event_id", event.ID))
@@ -376,7 +382,9 @@ func outboxRetryDelay(attempt int) time.Duration {
 	return time.Duration(1<<(attempt-1)) * time.Second
 }
 
-func (w *Worker) handleAvatarDeleted(ctx context.Context, msg *contracts.Message) error {
+func (w *Worker) handleAvatarDeleted(ctx context.Context, msg *contracts.Message) (err error) {
+	ctx, span := startWorkerSpan(ctx, "avatar.delete")
+	defer func() { finishWorkerSpan(span, err) }()
 	var event events.AvatarDeletedEvent
 	if err := json.Unmarshal(msg.Payload, &event); err != nil {
 		return fmt.Errorf("unmarshal deletion event: %w", err)

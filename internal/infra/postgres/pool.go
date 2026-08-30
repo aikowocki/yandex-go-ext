@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aikowocki/yandex-go-ext/internal/config"
+	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	"github.com/aikowocki/yandex-go-ext/internal/infra/postgres/gen"
 )
 
@@ -24,6 +25,7 @@ func NewPool(ctx context.Context, cfg config.DatabaseConfig) (*DB, error) {
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
 	}
+	poolConfig.ConnConfig.Tracer = observability.PGXQueryTracer{}
 	poolConfig.MaxConns = cfg.MaxConns
 	poolConfig.MinConns = cfg.MinConns
 	poolConfig.MaxConnLifetime = cfg.MaxConnLifetime

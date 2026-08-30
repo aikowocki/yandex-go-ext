@@ -286,6 +286,7 @@ type OutboxEvent struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	PublishedAt   pgtype.Timestamptz `json:"published_at"`
 	ClaimedUntil  pgtype.Timestamptz `json:"claimed_until"`
+	Headers       []byte             `json:"headers"`
 }
 
 type Thumbnail struct {

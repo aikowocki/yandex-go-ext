@@ -65,7 +65,9 @@ func New(
 }
 
 // Create загружает файл и создаёт avatar пользователя.
-func (uc *UseCase) Create(ctx context.Context, userID string, file *multipart.FileHeader, requestedCrop ...domain.AvatarCrop) (*domain.Avatar, error) {
+func (uc *UseCase) Create(ctx context.Context, userID string, file *multipart.FileHeader, requestedCrop ...domain.AvatarCrop) (result *domain.Avatar, err error) {
+	ctx, span := startAvatarSpan(ctx, "create")
+	defer func() { finishAvatarSpan(span, err) }()
 	ctx = logging.WithLogger(ctx, uc.logger)
 	if strings.TrimSpace(userID) == "" {
 		return nil, fmt.Errorf("user id: %w", domain.ErrInvalidInput)
@@ -263,7 +265,9 @@ func (uc *UseCase) Create(ctx context.Context, userID string, file *multipart.Fi
 }
 
 // UpdateCrop обновляет кадрирование avatar и ставит его на повторную обработку.
-func (uc *UseCase) UpdateCrop(ctx context.Context, userID string, id uuid.UUID, requestedCrop domain.AvatarCrop) (*domain.Avatar, error) {
+func (uc *UseCase) UpdateCrop(ctx context.Context, userID string, id uuid.UUID, requestedCrop domain.AvatarCrop) (result *domain.Avatar, err error) {
+	ctx, span := startAvatarSpan(ctx, "update_crop")
+	defer func() { finishAvatarSpan(span, err) }()
 	ctx = logging.WithLogger(ctx, uc.logger)
 	if strings.TrimSpace(userID) == "" || id == uuid.Nil {
 		return nil, domain.ErrInvalidInput
@@ -311,7 +315,9 @@ func (uc *UseCase) UpdateCrop(ctx context.Context, userID string, id uuid.UUID, 
 }
 
 // Get возвращает avatar по идентификатору.
-func (uc *UseCase) Get(ctx context.Context, id uuid.UUID) (*domain.Avatar, error) {
+func (uc *UseCase) Get(ctx context.Context, id uuid.UUID) (result *domain.Avatar, err error) {
+	ctx, span := startAvatarSpan(ctx, "get")
+	defer func() { finishAvatarSpan(span, err) }()
 	ctx = logging.WithLogger(ctx, uc.logger)
 	if id == uuid.Nil {
 		return nil, domain.ErrInvalidInput
@@ -320,7 +326,9 @@ func (uc *UseCase) Get(ctx context.Context, id uuid.UUID) (*domain.Avatar, error
 }
 
 // GetByUserID возвращает avatar пользователя.
-func (uc *UseCase) GetByUserID(ctx context.Context, userID string) (*domain.Avatar, error) {
+func (uc *UseCase) GetByUserID(ctx context.Context, userID string) (result *domain.Avatar, err error) {
+	ctx, span := startAvatarSpan(ctx, "get_by_user")
+	defer func() { finishAvatarSpan(span, err) }()
 	ctx = logging.WithLogger(ctx, uc.logger)
 	if strings.TrimSpace(userID) == "" {
 		return nil, domain.ErrInvalidInput
@@ -329,7 +337,9 @@ func (uc *UseCase) GetByUserID(ctx context.Context, userID string) (*domain.Avat
 }
 
 // List возвращает страницу avatar пользователя.
-func (uc *UseCase) List(ctx context.Context, userID string, limit, offset int) ([]*domain.Avatar, error) {
+func (uc *UseCase) List(ctx context.Context, userID string, limit, offset int) (result []*domain.Avatar, err error) {
+	ctx, span := startAvatarSpan(ctx, "list")
+	defer func() { finishAvatarSpan(span, err) }()
 	ctx = logging.WithLogger(ctx, uc.logger)
 	if strings.TrimSpace(userID) == "" {
 		return nil, domain.ErrInvalidInput
@@ -338,7 +348,9 @@ func (uc *UseCase) List(ctx context.Context, userID string, limit, offset int) (
 }
 
 // Delete удаляет avatar пользователя и публикует событие удаления.
-func (uc *UseCase) Delete(ctx context.Context, userID string, id uuid.UUID) error {
+func (uc *UseCase) Delete(ctx context.Context, userID string, id uuid.UUID) (err error) {
+	ctx, span := startAvatarSpan(ctx, "delete")
+	defer func() { finishAvatarSpan(span, err) }()
 	ctx = logging.WithLogger(ctx, uc.logger)
 	if strings.TrimSpace(userID) == "" || id == uuid.Nil {
 		return domain.ErrInvalidInput

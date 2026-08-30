@@ -2,9 +2,10 @@ package rabbitmq
 
 import (
 	"context"
-	"github.com/aikowocki/yandex-go-ext/internal/contracts"
 	"testing"
 	"time"
+
+	"github.com/aikowocki/yandex-go-ext/internal/contracts"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -31,11 +32,15 @@ func TestDeliveryMessagePreservesAttemptMetadata(t *testing.T) {
 		MessageId: "message-2",
 		Headers: amqp.Table{
 			contracts.DeliveryAttemptHeader: "3",
+			"traceparent":                   []byte("00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"),
 		},
 	}, 5)
 
 	if got := deliveryAttempt(message); got != 3 {
 		t.Fatalf("delivery attempt = %d, want 3", got)
+	}
+	if message.Headers["traceparent"] == "" {
+		t.Fatal("traceparent header was not preserved")
 	}
 }
 

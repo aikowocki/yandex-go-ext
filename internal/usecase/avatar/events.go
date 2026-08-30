@@ -7,20 +7,23 @@ import (
 	"time"
 
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
+	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
-	"github.com/google/uuid"
 )
 
 func publishEvent(ctx context.Context, broker contracts.Publisher, outbox contracts.OutboxRepository, topic string, payload []byte) error {
+	message := contracts.NewMessage(topic, payload)
+	observability.InjectMessageContext(ctx, message.Headers)
 	if outbox == nil {
-		return broker.Publish(ctx, topic, contracts.NewMessage(topic, payload))
+		return broker.Publish(ctx, topic, message)
 	}
 
 	now := time.Now().UTC()
 	event := &contracts.OutboxEvent{
-		ID:            uuid.NewString(),
+		ID:            message.ID,
 		Topic:         topic,
 		Payload:       payload,
+		Headers:       observability.CloneHeaders(message.Headers),
 		CreatedAt:     now,
 		NextAttemptAt: now,
 	}
@@ -28,7 +31,8 @@ func publishEvent(ctx context.Context, broker contracts.Publisher, outbox contra
 		return fmt.Errorf("save outbox event: %w", err)
 	}
 
-	message := contracts.NewMessageWithID(event.ID, topic, payload)
+	message = contracts.NewMessageWithID(event.ID, topic, payload)
+	message.Headers = observability.CloneHeaders(event.Headers)
 	if err := broker.Publish(ctx, topic, message); err != nil {
 		nextAttempt := time.Now().UTC().Add(time.Second)
 		if markErr := outbox.MarkFailed(ctx, event.ID, err.Error(), nextAttempt); markErr != nil {

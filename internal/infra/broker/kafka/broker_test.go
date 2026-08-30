@@ -3,10 +3,11 @@ package kafka
 import (
 	"context"
 	"encoding/json"
-	"github.com/IBM/sarama"
-	"github.com/aikowocki/yandex-go-ext/internal/contracts"
 	"testing"
 	"time"
+
+	"github.com/IBM/sarama"
+	"github.com/aikowocki/yandex-go-ext/internal/contracts"
 )
 
 func TestParseMessageUsesNativeHeadersAndKeyFallback(t *testing.T) {
@@ -20,6 +21,7 @@ func TestParseMessageUsesNativeHeadersAndKeyFallback(t *testing.T) {
 			{Key: []byte(contracts.ContentTypeHeader), Value: []byte("application/json")},
 			{Key: []byte(contracts.SchemaVersionHeader), Value: []byte("v2")},
 			{Key: []byte(contracts.DeliveryAttemptHeader), Value: []byte("2")},
+			{Key: []byte("traceparent"), Value: []byte("00-0123456789abcdef0123456789abcdef-0123456789abcdef-01")},
 		},
 	}
 
@@ -35,6 +37,9 @@ func TestParseMessageUsesNativeHeadersAndKeyFallback(t *testing.T) {
 	}
 	if got.Headers[contracts.DeliveryAttemptHeader] != "2" {
 		t.Fatalf("expected delivery attempt 2, got %q", got.Headers[contracts.DeliveryAttemptHeader])
+	}
+	if got.Headers["traceparent"] == "" {
+		t.Fatal("traceparent header was not preserved")
 	}
 }
 

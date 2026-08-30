@@ -5,12 +5,13 @@ import (
 	"fmt"
 
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
+	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 // Publish отправляет сообщение в RabbitMQ.
-func (b *Broker) Publish(ctx context.Context, topic string, msg *contracts.Message) error {
+func (b *Broker) Publish(ctx context.Context, topic string, msg *contracts.Message) (err error) {
 	if msg == nil {
 		return fmt.Errorf("message is nil")
 	}
@@ -26,6 +27,12 @@ func (b *Broker) Publish(ctx context.Context, topic string, msg *contracts.Messa
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if msg.Headers == nil {
+		msg.Headers = make(map[string]string)
+	}
+	ctx, span := observability.StartProducerSpan(ctx, "rabbitmq", topic)
+	defer func() { observability.FinishMessagingSpan(span, err) }()
+	observability.InjectMessageContext(ctx, msg.Headers)
 
 	headers := cloneHeaders(msg.Headers)
 	if msg.ID != "" {

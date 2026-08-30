@@ -11,7 +11,10 @@ import (
 func deliveryMessage(topic string, delivery amqp.Delivery, maxAttempts int) *contracts.Message {
 	headers := make(map[string]string, len(delivery.Headers)+2)
 	for key, value := range delivery.Headers {
-		if stringValue, ok := value.(string); ok {
+		switch stringValue := value.(type) {
+		case []byte:
+			headers[key] = string(stringValue)
+		case string:
 			headers[key] = stringValue
 		}
 	}

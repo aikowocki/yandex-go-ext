@@ -9,14 +9,17 @@ import (
 	"github.com/aikowocki/yandex-go-ext/internal/config"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 type Provider struct {
 	tracerProvider *sdktrace.TracerProvider
+	meterProvider  *sdkmetric.MeterProvider
 	shutdownOnce   sync.Once
 	shutdownErr    error
 }
@@ -46,6 +49,11 @@ func New(ctx context.Context, cfg config.ObservabilityConfig, serviceName string
 	if err != nil {
 		return nil, fmt.Errorf("create OTLP trace exporter: %w", err)
 	}
+	metricExporter, err := otlpmetricgrpc.New(ctx, metricExporterOptions(cfg)...)
+	if err != nil {
+		_ = exporter.Shutdown(ctx)
+		return nil, fmt.Errorf("create OTLP metric exporter: %w", err)
+	}
 
 	res, err := resource.New(ctx,
 		resource.WithFromEnv(),
@@ -57,6 +65,8 @@ func New(ctx context.Context, cfg config.ObservabilityConfig, serviceName string
 		),
 	)
 	if err != nil {
+		_ = metricExporter.Shutdown(ctx)
+		_ = exporter.Shutdown(ctx)
 		return nil, fmt.Errorf("create telemetry resource: %w", err)
 	}
 
@@ -65,8 +75,21 @@ func New(ctx context.Context, cfg config.ObservabilityConfig, serviceName string
 		sdktrace.WithBatcher(exporter),
 		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(cfg.TraceSampleRatio))),
 	)
+	provider.meterProvider = sdkmetric.NewMeterProvider(
+		sdkmetric.WithResource(res),
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
+	)
 	otel.SetTracerProvider(provider.tracerProvider)
+	otel.SetMeterProvider(provider.meterProvider)
 	return provider, nil
+}
+
+func metricExporterOptions(cfg config.ObservabilityConfig) []otlpmetricgrpc.Option {
+	options := []otlpmetricgrpc.Option{otlpmetricgrpc.WithEndpointURL(cfg.OTLPEndpoint)}
+	if cfg.OTLPInsecure {
+		options = append(options, otlpmetricgrpc.WithInsecure())
+	}
+	return options
 }
 
 func (p *Provider) Shutdown(ctx context.Context) error {
@@ -74,8 +97,11 @@ func (p *Provider) Shutdown(ctx context.Context) error {
 		return nil
 	}
 	p.shutdownOnce.Do(func() {
+		if p.meterProvider != nil {
+			p.shutdownErr = p.meterProvider.Shutdown(ctx)
+		}
 		if p.tracerProvider != nil {
-			p.shutdownErr = p.tracerProvider.Shutdown(ctx)
+			p.shutdownErr = errors.Join(p.shutdownErr, p.tracerProvider.Shutdown(ctx))
 		}
 	})
 	return p.shutdownErr

@@ -94,6 +94,14 @@ func (w *Worker) Start(ctx context.Context) error {
 }
 
 func (w *Worker) handleAvatarUploaded(ctx context.Context, msg *contracts.Message) (err error) {
+	started := time.Now()
+	defer func() {
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		observability.RecordAvatarProcessing(ctx, status, time.Since(started))
+	}()
 	ctx, span := startWorkerSpan(ctx, "avatar.process")
 	defer func() { finishWorkerSpan(span, err) }()
 	ctx = logging.WithLogger(ctx, w.logger)

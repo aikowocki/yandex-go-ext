@@ -15,6 +15,7 @@ import (
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
 	"github.com/aikowocki/yandex-go-ext/internal/domain"
 	"github.com/aikowocki/yandex-go-ext/internal/domain/events"
+	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 	"github.com/google/uuid"
 )
@@ -66,6 +67,18 @@ func New(
 
 // Create загружает файл и создаёт avatar пользователя.
 func (uc *UseCase) Create(ctx context.Context, userID string, file *multipart.FileHeader, requestedCrop ...domain.AvatarCrop) (result *domain.Avatar, err error) {
+	started := time.Now()
+	var uploadSize int64 = -1
+	if file != nil {
+		uploadSize = file.Size
+	}
+	defer func() {
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		observability.RecordAvatarUpload(ctx, status, time.Since(started), uploadSize)
+	}()
 	ctx, span := startAvatarSpan(ctx, "create")
 	defer func() { finishAvatarSpan(span, err) }()
 	ctx = logging.WithLogger(ctx, uc.logger)

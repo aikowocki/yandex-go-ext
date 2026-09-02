@@ -100,10 +100,9 @@ tasks:
     go-test-coverage --config=./.testcoverage.yml 2>&1 | grep -i "total test coverage\|threshold"
 
   docker-up:
-    desc: Запустить локальную инфраструктуру
+    desc: Запустить локальную инфраструктуру с пересборкой локальных образов
     cmds:
-      - docker compose -f deployments/docker/docker-compose.yml up -d
-
+      - docker compose -f deployments/docker/docker-compose.yml up -d --build --remove-orphans
   docker-down:
     desc: Остановить локальную инфраструктуру
     cmds:

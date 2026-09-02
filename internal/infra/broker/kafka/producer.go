@@ -23,7 +23,15 @@ func (b *Broker) Publish(ctx context.Context, topic string, msg *contracts.Messa
 		msg.Headers = make(map[string]string)
 	}
 	ctx, span := observability.StartProducerSpan(ctx, "kafka", topic)
-	defer func() { observability.FinishMessagingSpan(span, err) }()
+	started := time.Now()
+	defer func() {
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		observability.RecordMessagingPublish(ctx, "kafka", topic, status, time.Since(started))
+		observability.FinishMessagingSpan(span, err)
+	}()
 	observability.InjectMessageContext(ctx, msg.Headers)
 
 	headers := make([]sarama.RecordHeader, 0, len(msg.Headers)+2)

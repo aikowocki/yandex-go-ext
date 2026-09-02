@@ -3,6 +3,7 @@ package rabbitmq
 import (
 	"context"
 	"strconv"
+	"time"
 
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
 	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
@@ -14,7 +15,15 @@ func (b *Broker) handleDelivery(ctx context.Context, topic string, delivery amqp
 	message := deliveryMessage(topic, delivery, b.maxAttempts)
 	messageCtx := observability.ExtractMessageContext(ctx, message.Headers)
 	messageCtx, span := observability.StartConsumerSpan(messageCtx, "rabbitmq", topic, deliveryAttempt(message))
+	observability.ChangeQueueDepth("rabbitmq", topic, 1)
+	started := time.Now()
 	err := handler(messageCtx, message)
+	observability.ChangeQueueDepth("rabbitmq", topic, -1)
+	status := "success"
+	if err != nil {
+		status = "error"
+	}
+	observability.RecordMessagingConsume(messageCtx, "rabbitmq", topic, status, time.Since(started))
 	observability.FinishMessagingSpan(span, err)
 	if err == nil {
 		if ackErr := delivery.Ack(false); ackErr != nil {
@@ -27,7 +36,10 @@ func (b *Broker) handleDelivery(ctx context.Context, topic string, delivery amqp
 	attempt := deliveryAttempt(message)
 	targetExchange := b.retryExchange
 	if attempt >= b.maxAttempts {
+		observability.RecordMessagingRetry(messageCtx, "rabbitmq", topic, true)
 		targetExchange = b.deadExchange
+	} else {
+		observability.RecordMessagingRetry(messageCtx, "rabbitmq", topic, false)
 	}
 	if publishErr := b.publishForward(messageCtx, topic, message, targetExchange); publishErr != nil {
 		logging.Error(messageCtx, "failed to forward RabbitMQ message", logging.Err(publishErr), logging.String("message_id", message.ID))

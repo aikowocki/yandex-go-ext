@@ -5,6 +5,9 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/aikowocki/yandex-go-ext/internal/config"
 	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
@@ -14,6 +17,7 @@ import (
 // DB оборачивает пул соединений и выбирает querier для текущего context.
 type DB struct {
 	*pgxpool.Pool
+	metricRegistration metric.Registration
 }
 
 // NewPool создаёт и проверяет пул PostgreSQL.
@@ -39,7 +43,67 @@ func NewPool(ctx context.Context, cfg config.DatabaseConfig) (*DB, error) {
 		pool.Close()
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
-	return &DB{Pool: pool}, nil
+	db := &DB{Pool: pool}
+	db.registerMetrics()
+	return db, nil
+}
+
+func (db *DB) registerMetrics() {
+	if db == nil || db.Pool == nil {
+		return
+	}
+	meter := otel.Meter("gophprofile/postgres")
+	connections, err := meter.Int64ObservableGauge("db.client.connections", metric.WithDescription("Максимальное количество соединений в пуле PostgreSQL."))
+	if err != nil {
+		return
+	}
+	acquired, err := meter.Int64ObservableGauge("db.client.connections.usage", metric.WithDescription("Количество занятых соединений пула PostgreSQL."))
+	if err != nil {
+		return
+	}
+	idle, err := meter.Int64ObservableGauge("db.client.connections.idle", metric.WithDescription("Количество свободных соединений PostgreSQL в пуле."))
+	if err != nil {
+		return
+	}
+	outboxPending, err := meter.Int64ObservableGauge("outbox.pending", metric.WithDescription("Количество ожидающих событий transactional outbox."))
+	if err != nil {
+		return
+	}
+	storageUsage, err := meter.Int64ObservableGauge("storage.usage", metric.WithDescription("Объём байтов blob-объектов, сохранённых в PostgreSQL."))
+	if err != nil {
+		return
+	}
+	registration, err := meter.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
+		stat := db.Pool.Stat()
+		attrs := metric.WithAttributes(attribute.String("db.system", "postgresql"), attribute.String("pool", "primary"))
+		observer.ObserveInt64(connections, int64(stat.MaxConns()), attrs)
+		observer.ObserveInt64(acquired, int64(stat.AcquiredConns()), attrs)
+		observer.ObserveInt64(idle, int64(stat.IdleConns()), attrs)
+		var pending int64
+		if err := db.Pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE published_at IS NULL AND next_attempt_at <= now()`).Scan(&pending); err == nil {
+			observer.ObserveInt64(outboxPending, pending)
+		}
+		var storageBytes int64
+		if err := db.Pool.QueryRow(ctx, `SELECT COALESCE(sum(size_bytes), 0) FROM blobs WHERE storage_status = 'ready'`).Scan(&storageBytes); err == nil {
+			observer.ObserveInt64(storageUsage, storageBytes, metric.WithAttributes(attribute.String("object.type", "blob")))
+		}
+		return nil
+	}, connections, acquired, idle, outboxPending, storageUsage)
+	if err == nil {
+		db.metricRegistration = registration
+	}
+}
+
+func (db *DB) Close() {
+	if db == nil {
+		return
+	}
+	if db.metricRegistration != nil {
+		_ = db.metricRegistration.Unregister()
+	}
+	if db.Pool != nil {
+		db.Pool.Close()
+	}
 }
 
 // querier возвращает активную транзакцию из context или retrying pool querier.

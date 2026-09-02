@@ -55,6 +55,7 @@ func NewServer(
 	e.Use(otelecho.Middleware("gophprofile-server", otelecho.WithSkipper(func(c echo.Context) bool {
 		return c.Path() == "/health"
 	})))
+	e.Use(metricsMiddleware())
 	e.Use(restmiddleware.RequestLogger(logger))
 	e.Use(restmiddleware.Recovery())
 	e.Use(restmiddleware.CORS())

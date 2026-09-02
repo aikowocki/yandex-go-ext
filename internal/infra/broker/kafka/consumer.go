@@ -135,7 +135,9 @@ func (h *consumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 			if err != nil {
 				status = "error"
 			}
-			observability.RecordMessagingConsume(messageCtx, "kafka", message.Topic, status, time.Since(started))
+			duration := time.Since(started)
+			observability.RecordMessagingConsume(messageCtx, "kafka", message.Topic, status, duration)
+			logging.LogMessagingConsume(messageCtx, "kafka", message.Topic, contractMessage.ID, status, duration, err)
 			observability.FinishMessagingSpan(span, err)
 			if err != nil {
 				if deliveryAttempt(contractMessage) >= h.broker.maxAttempts {

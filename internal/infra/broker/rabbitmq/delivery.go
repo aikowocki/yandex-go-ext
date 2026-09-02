@@ -23,7 +23,9 @@ func (b *Broker) handleDelivery(ctx context.Context, topic string, delivery amqp
 	if err != nil {
 		status = "error"
 	}
-	observability.RecordMessagingConsume(messageCtx, "rabbitmq", topic, status, time.Since(started))
+	duration := time.Since(started)
+	observability.RecordMessagingConsume(messageCtx, "rabbitmq", topic, status, duration)
+	logging.LogMessagingConsume(messageCtx, "rabbitmq", topic, message.ID, status, duration, err)
 	observability.FinishMessagingSpan(span, err)
 	if err == nil {
 		if ackErr := delivery.Ack(false); ackErr != nil {

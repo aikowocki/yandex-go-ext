@@ -38,7 +38,9 @@ func (b *Broker) Publish(ctx context.Context, topic string, msg *contracts.Messa
 		if err != nil {
 			status = "error"
 		}
-		observability.RecordMessagingPublish(ctx, "rabbitmq", topic, status, time.Since(started))
+		duration := time.Since(started)
+		observability.RecordMessagingPublish(ctx, "rabbitmq", topic, status, duration)
+		logging.LogMessagingPublish(ctx, "rabbitmq", topic, msg.ID, status, duration, err)
 		observability.FinishMessagingSpan(span, err)
 	}()
 	observability.InjectMessageContext(ctx, msg.Headers)
@@ -58,7 +60,6 @@ func (b *Broker) Publish(ctx context.Context, topic string, msg *contracts.Messa
 	if err := b.publishConfirmed(ctx, topic, msg.ID, publishing); err != nil {
 		return fmt.Errorf("publish rabbitmq message: %w", err)
 	}
-	logging.Debug(ctx, "published broker message", logging.String("broker", "rabbitmq"), logging.String("topic", topic), logging.String("message_id", msg.ID))
 	return nil
 }
 

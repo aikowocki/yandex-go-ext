@@ -29,7 +29,9 @@ func (b *Broker) Publish(ctx context.Context, topic string, msg *contracts.Messa
 		if err != nil {
 			status = "error"
 		}
-		observability.RecordMessagingPublish(ctx, "kafka", topic, status, time.Since(started))
+		duration := time.Since(started)
+		observability.RecordMessagingPublish(ctx, "kafka", topic, status, duration)
+		logging.LogMessagingPublish(ctx, "kafka", topic, msg.ID, status, duration, err)
 		observability.FinishMessagingSpan(span, err)
 	}()
 	observability.InjectMessageContext(ctx, msg.Headers)
@@ -52,10 +54,8 @@ func (b *Broker) Publish(ctx context.Context, topic string, msg *contracts.Messa
 		Value:   sarama.ByteEncoder(msg.Payload),
 		Headers: headers,
 	}
-	partition, offset, err := b.producer.SendMessage(kafkaMessage)
-	if err != nil {
+	if _, _, err := b.producer.SendMessage(kafkaMessage); err != nil {
 		return fmt.Errorf("send kafka message: %w", err)
 	}
-	logging.Debug(ctx, "published broker message", logging.String("broker", "kafka"), logging.String("topic", topic), logging.String("message_id", msg.ID), logging.Int32("partition", partition), logging.Int64("offset", offset))
 	return nil
 }

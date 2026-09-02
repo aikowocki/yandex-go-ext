@@ -18,17 +18,28 @@ func New(ctx context.Context, serviceName string) (*Container, error) {
 		return nil, fmt.Errorf("config: %w", err)
 	}
 
-	logger, err := logging.New(cfg.Log)
-	if err != nil {
-		return nil, fmt.Errorf("logger: %w", err)
-	}
-	restoreLogger := logging.Install(logger)
 	telemetry, err := observability.New(ctx, cfg.Observability, serviceName)
 	if err != nil {
-		restoreLogger()
-		_ = logger.Sync()
 		return nil, fmt.Errorf("observability: %w", err)
 	}
+
+	logger, err := logging.New(cfg.Log)
+	if err != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = telemetry.Shutdown(shutdownCtx)
+		cancel()
+		return nil, fmt.Errorf("logger: %w", err)
+	}
+	// Добавляем в логи информацию о сервисе и окружении.
+	logger = logger.With(
+		logging.String("service.name", serviceName),
+		logging.String("service.version", cfg.Observability.ServiceVersion),
+		logging.String("deployment.environment.name", cfg.Observability.Environment),
+	)
+	if otelLogger := telemetry.Logger("github.com/aikowocki/yandex-go-ext/internal/app"); otelLogger != nil {
+		logger = logging.WithOTelLogger(logger, otelLogger)
+	}
+	restoreLogger := logging.Install(logger)
 	appLogger := logging.ComponentLogger(logger, "app")
 	storageLogger := logging.ComponentLogger(logger, "storage")
 	brokerLogger := logging.ComponentLogger(logger, "broker")

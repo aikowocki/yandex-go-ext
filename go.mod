@@ -13,6 +13,7 @@ require (
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/minio/minio-go/v7 v7.2.1
 	github.com/rabbitmq/amqp091-go v1.13.0
+	github.com/grafana/pyroscope-go v1.4.2
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
 	go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho v0.69.0
@@ -61,6 +62,7 @@ require (
 	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
+	github.com/grafana/pyroscope-go/godeltaprof v0.1.11 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect

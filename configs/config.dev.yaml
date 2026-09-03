@@ -61,3 +61,5 @@ observability:
   trace_sample_ratio: 1.0
   service_version: "dev"
   environment: "development"
+  pyroscope_enabled: false
+  pyroscope_server_address: "http://localhost:4040"

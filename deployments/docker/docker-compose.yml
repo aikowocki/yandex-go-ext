@@ -139,6 +139,22 @@ services:
       timeout: 5s
       retries: 5
 
+  pyroscope:
+    image: grafana/pyroscope:1.18.0
+    user: "0:0"
+    restart: unless-stopped
+    command: ["-config.file=/etc/pyroscope/config.yaml"]
+    volumes:
+      - ../observability/pyroscope.yaml:/etc/pyroscope/config.yaml:ro
+      - pyroscope-data:/var/lib/pyroscope
+    ports:
+      - "4040:4040"
+    healthcheck:
+      test: ["CMD", "/usr/bin/pyroscope", "-version"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   loki:
     image: grafana/loki:3.7.6
     restart: unless-stopped
@@ -249,6 +265,8 @@ services:
         condition: service_started
       jaeger:
         condition: service_started
+      pyroscope:
+        condition: service_healthy
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
@@ -278,6 +296,8 @@ services:
         condition: service_completed_successfully
       otel-collector:
         condition: service_started
+      pyroscope:
+        condition: service_healthy
       # rabbitmq:
       #   condition: service_healthy
       # kafka:
@@ -310,6 +330,8 @@ services:
       OTEL_TRACES_SAMPLER_ARG: "1.0"
       OTEL_SERVICE_VERSION: dev
       OTEL_ENVIRONMENT: development
+      PYROSCOPE_ENABLED: "true"
+      PYROSCOPE_SERVER_ADDRESS: http://pyroscope:4040
     ports:
       - "8080:8080"
 
@@ -326,6 +348,8 @@ services:
         condition: service_completed_successfully
       otel-collector:
         condition: service_started
+      pyroscope:
+        condition: service_healthy
       # rabbitmq:
       #   condition: service_healthy
       # kafka:
@@ -358,6 +382,8 @@ services:
       OTEL_TRACES_SAMPLER_ARG: "1.0"
       OTEL_SERVICE_VERSION: dev
       OTEL_ENVIRONMENT: development
+      PYROSCOPE_ENABLED: "true"
+      PYROSCOPE_SERVER_ADDRESS: http://pyroscope:4040
 
   cronjob:
     build:
@@ -372,6 +398,8 @@ services:
         condition: service_healthy
       otel-collector:
         condition: service_started
+      pyroscope:
+        condition: service_healthy
     environment:
       ENV: dev
       DATABASE_URL: postgres://gophprofile:gophprofile@postgres:5432/gophprofile?sslmode=disable
@@ -385,6 +413,8 @@ services:
       OTEL_TRACES_SAMPLER_ARG: "1.0"
       OTEL_SERVICE_VERSION: dev
       OTEL_ENVIRONMENT: development
+      PYROSCOPE_ENABLED: "true"
+      PYROSCOPE_SERVER_ADDRESS: http://pyroscope:4040
 
   cronjob-scheduler:
     build:
@@ -397,6 +427,8 @@ services:
         condition: service_healthy
       otel-collector:
         condition: service_started
+      pyroscope:
+        condition: service_healthy
     restart: unless-stopped
     entrypoint: ["/app/cronjob-scheduler.sh"]
     environment:
@@ -412,6 +444,8 @@ services:
       OTEL_TRACES_SAMPLER_ARG: "1.0"
       OTEL_SERVICE_VERSION: dev
       OTEL_ENVIRONMENT: development
+      PYROSCOPE_ENABLED: "true"
+      PYROSCOPE_SERVER_ADDRESS: http://pyroscope:4040
 
 volumes:
   postgres-data:
@@ -422,4 +456,5 @@ volumes:
   prometheus-data:
   alertmanager-data:
   grafana-data:
+  pyroscope-data:
 

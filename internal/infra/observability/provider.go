@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/aikowocki/yandex-go-ext/internal/config"
+	"github.com/grafana/pyroscope-go"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
@@ -24,6 +25,7 @@ type Provider struct {
 	tracerProvider *sdktrace.TracerProvider
 	meterProvider  *sdkmetric.MeterProvider
 	loggerProvider *sdklog.LoggerProvider
+	profiler       *pyroscope.Profiler
 	shutdownOnce   sync.Once
 	shutdownErr    error
 }
@@ -96,6 +98,35 @@ func New(ctx context.Context, cfg config.ObservabilityConfig, serviceName string
 	)
 	otel.SetTracerProvider(provider.tracerProvider)
 	otel.SetMeterProvider(provider.meterProvider)
+	if cfg.PyroscopeEnabled {
+		if cfg.PyroscopeServerAddress == "" {
+			_ = provider.Shutdown(ctx)
+			return nil, errors.New("pyroscope server address is empty")
+		}
+		provider.profiler, err = pyroscope.Start(pyroscope.Config{
+			ApplicationName: serviceName,
+			ServerAddress:   cfg.PyroscopeServerAddress,
+			AuthToken:       cfg.PyroscopeAuthToken,
+			Logger:          pyroscope.StandardLogger,
+			Tags: map[string]string{
+				"service.name":                serviceName,
+				"service.version":             cfg.ServiceVersion,
+				"deployment.environment.name": cfg.Environment,
+			},
+			ProfileTypes: []pyroscope.ProfileType{
+				pyroscope.ProfileCPU,
+				pyroscope.ProfileAllocObjects,
+				pyroscope.ProfileAllocSpace,
+				pyroscope.ProfileInuseObjects,
+				pyroscope.ProfileInuseSpace,
+				pyroscope.ProfileGoroutines,
+			},
+		})
+		if err != nil {
+			_ = provider.Shutdown(ctx)
+			return nil, fmt.Errorf("start Pyroscope profiler: %w", err)
+		}
+	}
 	return provider, nil
 }
 
@@ -127,6 +158,9 @@ func (p *Provider) Shutdown(ctx context.Context) error {
 		return nil
 	}
 	p.shutdownOnce.Do(func() {
+		if p.profiler != nil {
+			p.shutdownErr = errors.Join(p.shutdownErr, p.profiler.Stop())
+		}
 		if p.loggerProvider != nil {
 			p.shutdownErr = p.loggerProvider.Shutdown(ctx)
 		}

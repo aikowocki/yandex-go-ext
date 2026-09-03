@@ -93,10 +93,13 @@ type LogConfig struct {
 
 // ObservabilityConfig содержит настройки экспорта телеметрии OpenTelemetry.
 type ObservabilityConfig struct {
-	Enabled          bool    `yaml:"enabled" env:"OTEL_ENABLED" env-default:"false"`
-	OTLPEndpoint     string  `yaml:"otlp_endpoint" env:"OTEL_EXPORTER_OTLP_ENDPOINT" env-default:"http://localhost:4317"`
-	OTLPInsecure     bool    `yaml:"otlp_insecure" env:"OTEL_EXPORTER_OTLP_INSECURE" env-default:"true"`
-	TraceSampleRatio float64 `yaml:"trace_sample_ratio" env:"OTEL_TRACES_SAMPLER_ARG" env-default:"1.0"`
-	ServiceVersion   string  `yaml:"service_version" env:"OTEL_SERVICE_VERSION" env-default:"unknown"`
-	Environment      string  `yaml:"environment" env:"OTEL_ENVIRONMENT" env-default:"development"`
+	Enabled                bool    `yaml:"enabled" env:"OTEL_ENABLED" env-default:"false"`
+	OTLPEndpoint           string  `yaml:"otlp_endpoint" env:"OTEL_EXPORTER_OTLP_ENDPOINT" env-default:"http://localhost:4317"`
+	OTLPInsecure           bool    `yaml:"otlp_insecure" env:"OTEL_EXPORTER_OTLP_INSECURE" env-default:"true"`
+	TraceSampleRatio       float64 `yaml:"trace_sample_ratio" env:"OTEL_TRACES_SAMPLER_ARG" env-default:"1.0"`
+	ServiceVersion         string  `yaml:"service_version" env:"OTEL_SERVICE_VERSION" env-default:"unknown"`
+	Environment            string  `yaml:"environment" env:"OTEL_ENVIRONMENT" env-default:"development"`
+	PyroscopeEnabled       bool    `yaml:"pyroscope_enabled" env:"PYROSCOPE_ENABLED" env-default:"false"`
+	PyroscopeServerAddress string  `yaml:"pyroscope_server_address" env:"PYROSCOPE_SERVER_ADDRESS" env-default:"http://localhost:4040"`
+	PyroscopeAuthToken     string  `yaml:"-" env:"PYROSCOPE_AUTH_TOKEN"`
 }

@@ -11,6 +11,39 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+func TestMessageHeadersAndSpans(t *testing.T) {
+	carrier := headerCarrier{"x-request": "one"}
+	if got := carrier.Get("x-request"); got != "one" {
+		t.Fatalf("carrier.Get = %q", got)
+	}
+	carrier.Set("x-request", "two")
+	if len(carrier.Keys()) != 1 || carrier.Get("x-request") != "two" {
+		t.Fatalf("carrier after Set = %#v", carrier)
+	}
+	if got := CloneHeaders(nil); got == nil || len(got) != 0 {
+		t.Fatalf("CloneHeaders(nil) = %#v", got)
+	}
+	original := map[string]string{"x-request": "one"}
+	cloned := CloneHeaders(original)
+	cloned["x-request"] = "two"
+	if original["x-request"] != "one" {
+		t.Fatal("CloneHeaders did not create an independent map")
+	}
+	InjectMessageContext(context.Background(), nil)
+
+	provider := sdktrace.NewTracerProvider()
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previous)
+		_ = provider.Shutdown(context.Background())
+	})
+	ctx, producer := StartProducerSpan(context.Background(), "kafka", "avatars")
+	_, consumer := StartConsumerSpan(ctx, "rabbitmq", "avatars", 2)
+	FinishMessagingSpan(producer, nil)
+	FinishMessagingSpan(consumer, context.Canceled)
+}
+
 func TestMessageContextRoundTrip(t *testing.T) {
 	previousProvider := otel.GetTracerProvider()
 	previousPropagator := otel.GetTextMapPropagator()

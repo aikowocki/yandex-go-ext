@@ -25,6 +25,7 @@ func (c headerCarrier) Keys() []string {
 	return keys
 }
 
+// InjectMessageContext добавляет trace context и baggage в заголовки сообщения.
 func InjectMessageContext(ctx context.Context, headers map[string]string) {
 	if headers == nil {
 		return
@@ -32,10 +33,12 @@ func InjectMessageContext(ctx context.Context, headers map[string]string) {
 	otel.GetTextMapPropagator().Inject(ctx, propagation.TextMapCarrier(headerCarrier(headers)))
 }
 
+// ExtractMessageContext извлекает trace context и baggage из заголовков сообщения.
 func ExtractMessageContext(ctx context.Context, headers map[string]string) context.Context {
 	return otel.GetTextMapPropagator().Extract(ctx, propagation.TextMapCarrier(headerCarrier(headers)))
 }
 
+// StartProducerSpan начинает producer span для публикации сообщения.
 func StartProducerSpan(ctx context.Context, system, destination string) (context.Context, trace.Span) {
 	return otel.Tracer(messagingTracerName).Start(ctx, "messaging.publish", trace.WithSpanKind(trace.SpanKindProducer), trace.WithAttributes(
 		attribute.String("messaging.system", system),
@@ -43,6 +46,7 @@ func StartProducerSpan(ctx context.Context, system, destination string) (context
 	))
 }
 
+// StartConsumerSpan начинает consumer span для обработки сообщения.
 func StartConsumerSpan(ctx context.Context, system, destination string, attempt int) (context.Context, trace.Span) {
 	return otel.Tracer(messagingTracerName).Start(ctx, "messaging.consume", trace.WithSpanKind(trace.SpanKindConsumer), trace.WithAttributes(
 		attribute.String("messaging.system", system),
@@ -51,6 +55,7 @@ func StartConsumerSpan(ctx context.Context, system, destination string, attempt 
 	))
 }
 
+// FinishMessagingSpan завершает messaging span и записывает ошибку операции.
 func FinishMessagingSpan(span trace.Span, err error) {
 	if err != nil {
 		span.RecordError(err)
@@ -61,6 +66,7 @@ func FinishMessagingSpan(span trace.Span, err error) {
 	span.End()
 }
 
+// CloneHeaders возвращает независимую копию заголовков сообщения.
 func CloneHeaders(headers map[string]string) map[string]string {
 	cloned := make(map[string]string, len(headers))
 	maps.Copy(cloned, headers)

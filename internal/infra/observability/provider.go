@@ -21,6 +21,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
+// Provider управляет провайдерами OpenTelemetry и необязательным непрерывным профилировщиком.
 type Provider struct {
 	tracerProvider *sdktrace.TracerProvider
 	meterProvider  *sdkmetric.MeterProvider
@@ -30,6 +31,7 @@ type Provider struct {
 	shutdownErr    error
 }
 
+// New создаёт провайдеры observability для сервиса.
 func New(ctx context.Context, cfg config.ObservabilityConfig, serviceName string) (*Provider, error) {
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
@@ -146,6 +148,7 @@ func logExporterOptions(cfg config.ObservabilityConfig) []otlploggrpc.Option {
 	return options
 }
 
+// Logger возвращает именованный логгер OpenTelemetry или nil, если логирование отключено.
 func (p *Provider) Logger(name string) otellog.Logger {
 	if p == nil || p.loggerProvider == nil {
 		return nil
@@ -153,6 +156,7 @@ func (p *Provider) Logger(name string) otellog.Logger {
 	return p.loggerProvider.Logger(name)
 }
 
+// Shutdown сбрасывает данные и останавливает провайдеры observability и профилировщик.
 func (p *Provider) Shutdown(ctx context.Context) error {
 	if p == nil {
 		return nil

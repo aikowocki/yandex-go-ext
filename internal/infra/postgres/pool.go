@@ -74,7 +74,7 @@ func (db *DB) registerMetrics() {
 		return
 	}
 	registration, err := meter.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
-		stat := db.Pool.Stat()
+		stat := db.Stat()
 		attrs := metric.WithAttributes(attribute.String("db.system", "postgresql"), attribute.String("pool", "primary"))
 		observer.ObserveInt64(connections, int64(stat.MaxConns()), attrs)
 		observer.ObserveInt64(acquired, int64(stat.AcquiredConns()), attrs)
@@ -94,6 +94,7 @@ func (db *DB) registerMetrics() {
 	}
 }
 
+// Close снимает регистрацию метрик базы данных и закрывает пул PostgreSQL.
 func (db *DB) Close() {
 	if db == nil {
 		return

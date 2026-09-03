@@ -16,6 +16,7 @@ const pgxTracerName = "gophprofile/postgres"
 // PGXQueryTracer создает сегменты базы данных без записи SQL-запроса или аргументов.
 type PGXQueryTracer struct{}
 
+// TraceQueryStart начинает span для PostgreSQL-запроса без записи SQL и аргументов.
 func (PGXQueryTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
 	operation := sqlOperation(data.SQL)
 	ctx, _ = otel.Tracer(pgxTracerName).Start(ctx, "db."+strings.ToLower(operation),
@@ -24,6 +25,7 @@ func (PGXQueryTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx
 	return ctx
 }
 
+// TraceQueryEnd завершает span PostgreSQL-запроса и записывает ошибки запроса.
 func (PGXQueryTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryEndData) {
 	span := trace.SpanFromContext(ctx)
 	if data.Err != nil {

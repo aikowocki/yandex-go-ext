@@ -30,6 +30,18 @@ schema_config:
 limits_config:
   allow_structured_metadata: true
   volume_enabled: true
+  # Нативный OTLP может индексировать только атрибуты ресурсов.
+  # Идентификатор потока намеренно сделан небольшим;
+  # все атрибуты записей, области видимости и другие атрибуты ресурсов
+  # сохраняются в виде структурированных метаданных для фильтрации LogQL.
+  otlp_config:
+    resource_attributes:
+      ignore_defaults: true
+      attributes_config:
+        - action: index_label
+          attributes:
+            - service.name
+            - deployment.environment.name
 
 analytics:
   reporting_enabled: false

@@ -2,6 +2,7 @@ package logging
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -51,7 +52,7 @@ func (l *otelLoggerBridge) Log(ctx context.Context, level Level, message string,
 func (l *otelLoggerBridge) emit(ctx context.Context, level Level, message string, attrs []Attr) {
 	record := otellog.Record{}
 	record.SetTimestamp(time.Now())
-	record.SetBody(otellog.StringValue(message))
+	record.SetBody(otellog.StringValue(otelLogBody(message, attrs)))
 	record.SetSeverity(otelSeverity(level))
 	record.SetSeverityText(level.String())
 
@@ -85,6 +86,25 @@ func (l *otelLoggerBridge) WithGroup(name string) Logger {
 }
 
 func (l *otelLoggerBridge) Sync() error { return l.backend.Sync() }
+
+func otelLogBody(message string, attrs []Attr) string {
+	for _, attr := range attrs {
+		if attr.Key != "trace_id" || attr.Value == nil {
+			continue
+		}
+		body, err := json.Marshal(struct {
+			Message string `json:"message"`
+			TraceID string `json:"trace_id"`
+		}{
+			Message: message,
+			TraceID: fmt.Sprint(attr.Value),
+		})
+		if err == nil {
+			return string(body)
+		}
+	}
+	return message
+}
 
 func otelSeverity(level Level) otellog.Severity {
 	switch level {

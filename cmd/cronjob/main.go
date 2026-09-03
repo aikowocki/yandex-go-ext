@@ -38,11 +38,6 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create logger: %w", err)
 	}
-	restoreLogger := logging.Install(logger)
-	defer func() {
-		restoreLogger()
-		_ = logger.Sync()
-	}()
 
 	telemetry, err := observability.New(ctx, cfg.Observability, "gophprofile-cronjob")
 	if err != nil {
@@ -54,6 +49,20 @@ func run() error {
 		_ = telemetry.Shutdown(shutdownCtx)
 	}()
 
+	logger = logger.With(
+		logging.String("service.name", "gophprofile-cronjob"),
+		logging.String("service.version", cfg.Observability.ServiceVersion),
+		logging.String("deployment.environment.name", cfg.Observability.Environment),
+	)
+	if otelLogger := telemetry.Logger("github.com/aikowocki/yandex-go-ext/cmd/cronjob"); otelLogger != nil {
+		logger = logging.WithOTelLogger(logger, otelLogger)
+	}
+	restoreLogger := logging.Install(logger)
+	defer func() {
+		restoreLogger()
+		_ = logger.Sync()
+	}()
+
 	db, err := providers.NewDatabase(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
@@ -61,7 +70,7 @@ func run() error {
 	defer db.Close()
 
 	storageLogger := logging.ComponentLogger(logger, "storage")
-	cronLogger := logging.ComponentLogger(logger, "cronjob")
+	cronLogger := logging.ComponentLogger(logger, "cronjob").With(logging.String("job", os.Args[1]))
 	storage, err := providers.NewObjectStore(ctx, cfg, storageLogger)
 	if err != nil {
 		return fmt.Errorf("open object storage: %w", err)

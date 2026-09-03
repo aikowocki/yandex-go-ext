@@ -140,11 +140,11 @@ func (h *consumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 			logging.LogMessagingConsume(messageCtx, "kafka", message.Topic, contractMessage.ID, status, duration, err)
 			observability.FinishMessagingSpan(span, err)
 			if err != nil {
-				if deliveryAttempt(contractMessage) >= h.broker.maxAttempts {
-					observability.RecordMessagingRetry(messageCtx, "kafka", message.Topic, true)
-				} else {
+				attempts := deliveryAttempt(contractMessage)
+				for attempt := 1; attempt < attempts; attempt++ {
 					observability.RecordMessagingRetry(messageCtx, "kafka", message.Topic, false)
 				}
+				observability.RecordMessagingRetry(messageCtx, "kafka", message.Topic, true)
 				if dlqErr := h.broker.publishToDLQ(messageCtx, message.Topic, contractMessage, err); dlqErr != nil {
 					return fmt.Errorf("publish Kafka dlq for %s: %w", message.Topic, dlqErr)
 				}

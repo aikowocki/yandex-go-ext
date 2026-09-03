@@ -1,0 +1,155 @@
+rule_files:
+  - gophprofile-alerts.yaml
+
+tests:
+  - name: ratios_ignore_zero_traffic
+    interval: 1m
+    input_series:
+      - series: 'http_server_request_count_total{service_name="test",deployment_environment_name="dev",http_response_status_code="200"}'
+        values: '0+0x20'
+      - series: 'http_server_request_count_total{service_name="test",deployment_environment_name="dev",http_response_status_code="500"}'
+        values: '0+0x20'
+      - series: 'avatars_uploads_total{service_name="test",deployment_environment_name="dev",status="success"}'
+        values: '0+0x20'
+      - series: 'avatars_uploads_total{service_name="test",deployment_environment_name="dev",status="error"}'
+        values: '0+0x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: GophProfileHighHTTP5xxRate
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: GophProfileHighAvatarUploadErrorRate
+        exp_alerts: []
+
+  - name: http_and_upload_error_rates
+    interval: 1m
+    input_series:
+      - series: 'http_server_request_count_total{service_name="test",deployment_environment_name="dev",http_response_status_code="200"}'
+        values: '0+100x25'
+      - series: 'http_server_request_count_total{service_name="test",deployment_environment_name="dev",http_response_status_code="500"}'
+        values: '0+20x25'
+      - series: 'avatars_uploads_total{service_name="test",deployment_environment_name="dev",status="success"}'
+        values: '0+80x25'
+      - series: 'avatars_uploads_total{service_name="test",deployment_environment_name="dev",status="error"}'
+        values: '0+20x25'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: GophProfileHighHTTP5xxRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service_name: test
+              deployment_environment_name: dev
+            exp_annotations:
+              summary: "Высокая доля HTTP 5xx"
+              description: "test возвращает более 5% HTTP 5xx при устойчивом трафике."
+      - eval_time: 20m
+        alertname: GophProfileHighAvatarUploadErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service_name: test
+              deployment_environment_name: dev
+            exp_annotations:
+              summary: "Высокая доля ошибок загрузки аватаров"
+              description: "test имеет более 10% ошибок загрузки при устойчивом потоке загрузок."
+
+  - name: health_and_dependency_alerts
+    interval: 1m
+    input_series:
+      - series: 'http_server_request_count_total{service_name="test",deployment_environment_name="dev",http_request_method="GET",http_route="/health",http_response_status_code="503"}'
+        values: '0+1x12'
+      - series: 'dependency_availability{service_name="test",deployment_environment_name="dev",dependency="database"}'
+        values: '0+0x8'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: GophProfileHealthEndpointErrors
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service_name: test
+              deployment_environment_name: dev
+            exp_annotations:
+              summary: "Health endpoint сообщает о недоступной зависимости"
+              description: "test возвращает HTTP 5xx на /health; проверьте database, storage и broker."
+      - eval_time: 3m
+        alertname: GophProfileDependencyUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service_name: test
+              deployment_environment_name: dev
+              dependency: database
+            exp_annotations:
+              summary: "Зависимость GophProfile недоступна"
+              description: "test не может выполнить health probe зависимости database."
+
+  - name: latency_and_backlog_alerts
+    interval: 1m
+    input_series:
+      - series: 'http_server_request_count_total{service_name="test",deployment_environment_name="dev",http_response_status_code="200"}'
+        values: '0+100x25'
+      - series: 'http_server_request_duration_seconds_bucket{service_name="test",deployment_environment_name="dev",le="0.5"}'
+        values: '0+0x25'
+      - series: 'http_server_request_duration_seconds_bucket{service_name="test",deployment_environment_name="dev",le="5"}'
+        values: '0+0x25'
+      - series: 'http_server_request_duration_seconds_bucket{service_name="test",deployment_environment_name="dev",le="10"}'
+        values: '0+100x25'
+      - series: 'http_server_request_duration_seconds_bucket{service_name="test",deployment_environment_name="dev",le="+Inf"}'
+        values: '0+100x25'
+      - series: 'outbox_pending{service_name="test",deployment_environment_name="dev"}'
+        values: '101+0x25'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: GophProfileHighHTTPP95Latency
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service_name: test
+              deployment_environment_name: dev
+            exp_annotations:
+              summary: "Высокая p95 HTTP latency"
+              description: "test имеет p95 HTTP latency выше 2 секунд."
+      - eval_time: 16m
+        alertname: GophProfileOutboxBacklog
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service_name: test
+              deployment_environment_name: dev
+            exp_annotations:
+              summary: "Растёт transactional outbox"
+              description: "test имеет более 100 ожидающих записей outbox."
+
+  - name: messaging_alerts
+    interval: 1m
+    input_series:
+      - series: 'messaging_dlq_total{service_name="test",deployment_environment_name="dev",messaging_system="kafka",messaging_destination_name="avatar.uploaded.dlq"}'
+        values: '0+1x8'
+      - series: 'messaging_retry_total{service_name="test",deployment_environment_name="dev",messaging_system="kafka",messaging_destination_name="avatar.uploaded"}'
+        values: '0+10x25'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: GophProfileMessagingDLQMessages
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service_name: test
+              deployment_environment_name: dev
+              messaging_system: kafka
+              messaging_destination_name: avatar.uploaded.dlq
+            exp_annotations:
+              summary: "Сообщение отправлено в DLQ"
+              description: "test отправил сообщение в DLQ avatar.uploaded.dlq."
+      - eval_time: 20m
+        alertname: GophProfileSustainedMessagingRetries
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service_name: test
+              deployment_environment_name: dev
+              messaging_system: kafka
+              messaging_destination_name: avatar.uploaded
+            exp_annotations:
+              summary: "Устойчивые retry сообщений"
+              description: "test повторяет сообщения в avatar.uploaded чаще 0.1 раза в секунду."

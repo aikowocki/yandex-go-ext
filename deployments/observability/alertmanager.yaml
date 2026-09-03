@@ -1,0 +1,19 @@
+global:
+  resolve_timeout: 1m
+  smtp_smarthost: mailhog:1025
+  smtp_from: alertmanager@gophprofile.local
+  smtp_require_tls: false
+
+route:
+  receiver: local-email
+  group_by: [alertname, service_name, severity]
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 4h
+
+receivers:
+  - name: local-email
+    email_configs:
+      - to: oncall@gophprofile.local
+        require_tls: false
+        send_resolved: true

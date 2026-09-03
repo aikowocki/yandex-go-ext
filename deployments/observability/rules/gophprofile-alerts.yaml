@@ -1,0 +1,193 @@
+groups:
+  - name: gophprofile.http
+    rules:
+      - alert: GophProfileHighHTTP5xxRate
+        expr: |
+          (
+            sum by (service_name, deployment_environment_name) (
+              rate(http_server_request_count_total{http_response_status_code=~"5.."}[5m])
+            )
+            /
+            clamp_min(
+              sum by (service_name, deployment_environment_name) (
+                rate(http_server_request_count_total[5m])
+              ),
+              1e-9
+            )
+          ) > 0.05
+          and on (service_name, deployment_environment_name)
+          sum by (service_name, deployment_environment_name) (
+            rate(http_server_request_count_total[5m])
+          ) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокая доля HTTP 5xx"
+          description: "{{ $labels.service_name }} возвращает более 5% HTTP 5xx при устойчивом трафике."
+
+      - alert: GophProfileHighAvatarUploadErrorRate
+        expr: |
+          (
+            sum by (service_name, deployment_environment_name) (
+              rate(avatars_uploads_total{status="error"}[10m])
+            )
+            /
+            clamp_min(
+              sum by (service_name, deployment_environment_name) (
+                rate(avatars_uploads_total[10m])
+              ),
+              1e-9
+            )
+          ) > 0.10
+          and on (service_name, deployment_environment_name)
+          sum by (service_name, deployment_environment_name) (
+            rate(avatars_uploads_total[10m])
+          ) > 0.016
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокая доля ошибок загрузки аватаров"
+          description: "{{ $labels.service_name }} имеет более 10% ошибок загрузки при устойчивом потоке загрузок."
+
+      - alert: GophProfileHealthEndpointErrors
+        expr: |
+          sum by (service_name, deployment_environment_name) (
+            rate(http_server_request_count_total{
+              http_route="/health",
+              http_response_status_code=~"5.."
+            }[5m])
+          ) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Health endpoint сообщает о недоступной зависимости"
+          description: "{{ $labels.service_name }} возвращает HTTP 5xx на /health; проверьте database, storage и broker."
+
+  - name: gophprofile.latency
+    rules:
+      - alert: GophProfileHighHTTPP95Latency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, service_name, deployment_environment_name) (
+              rate(http_server_request_duration_seconds_bucket[5m])
+            )
+          ) > 2
+          and on (service_name, deployment_environment_name)
+          sum by (service_name, deployment_environment_name) (
+            rate(http_server_request_count_total[5m])
+          ) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокая p95 HTTP latency"
+          description: "{{ $labels.service_name }} имеет p95 HTTP latency выше 2 секунд."
+
+      - alert: GophProfileHighAvatarProcessingP95Latency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, service_name, deployment_environment_name) (
+              rate(avatars_processing_duration_seconds_bucket{status!="skipped"}[10m])
+            )
+          ) > 5
+          and on (service_name, deployment_environment_name)
+          sum by (service_name, deployment_environment_name) (
+            rate(avatars_processing_total{status!="skipped"}[10m])
+          ) > 0.016
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокая p95 latency обработки аватаров"
+          description: "{{ $labels.service_name }} имеет p95 processing latency выше 5 секунд."
+
+  - name: gophprofile.messaging
+    rules:
+      - alert: GophProfileMessagingDLQMessages
+        expr: |
+          sum by (service_name, deployment_environment_name, messaging_system, messaging_destination_name) (
+            increase(messaging_dlq_total[10m])
+          ) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Сообщение отправлено в DLQ"
+          description: "{{ $labels.service_name }} отправил сообщение в DLQ {{ $labels.messaging_destination_name }}."
+
+      - alert: GophProfileSustainedMessagingRetries
+        expr: |
+          sum by (service_name, deployment_environment_name, messaging_system, messaging_destination_name) (
+            rate(messaging_retry_total[10m])
+          ) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Устойчивые retry сообщений"
+          description: "{{ $labels.service_name }} повторяет сообщения в {{ $labels.messaging_destination_name }} чаще 0.1 раза в секунду."
+
+      - alert: GophProfileKafkaConsumerLag
+        expr: |
+          sum by (consumergroup, topic) (
+            kafka_consumergroup_lag{consumergroup="gophprofile-workers"}
+          ) > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Растёт Kafka consumer lag"
+          description: "Consumer group {{ $labels.consumergroup }} отстаёт от topic {{ $labels.topic }} более чем на 100 сообщений."
+
+      - alert: GophProfileOutboxBacklog
+        expr: |
+          max by (service_name, deployment_environment_name) (outbox_pending) > 100
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Растёт transactional outbox"
+          description: "{{ $labels.service_name }} имеет более 100 ожидающих записей outbox."
+
+  - name: gophprofile.dependencies
+    rules:
+      - alert: GophProfileDependencyUnavailable
+        expr: dependency_availability{dependency=~"database|storage|broker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Зависимость GophProfile недоступна"
+          description: "{{ $labels.service_name }} не может выполнить health probe зависимости {{ $labels.dependency }}."
+
+      - alert: GophProfileOTelCollectorScrapeDown
+        expr: up{job="otel-collector"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus не скрейпит OTel Collector"
+          description: "Метрики приложения недоступны через target otel-collector."
+
+      - alert: GophProfilePrometheusScrapeDown
+        expr: up{job="prometheus"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus target недоступен"
+          description: "Prometheus не может скрейпить собственный metrics endpoint."
+
+      - alert: GophProfileNodeExporterScrapeDown
+        expr: up{job="node-exporter"} == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Node exporter недоступен"
+          description: "Метрики host resource utilization недоступны."

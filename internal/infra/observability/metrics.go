@@ -22,25 +22,32 @@ type metricSet struct {
 	httpDuration metric.Float64Histogram
 	httpActive   metric.Int64UpDownCounter
 
-	uploads     metric.Int64Counter
-	uploadTime  metric.Float64Histogram
-	uploadSize  metric.Int64Histogram
-	processing  metric.Int64Counter
-	processTime metric.Float64Histogram
-	publishes   metric.Int64Counter
-	publishTime metric.Float64Histogram
-	consumes    metric.Int64Counter
-	consumeTime metric.Float64Histogram
-	retries     metric.Int64Counter
-	dlq         metric.Int64Counter
-	queueDepth  metric.Int64ObservableGauge
-	queueValues sync.Map
+	uploads                metric.Int64Counter
+	uploadTime             metric.Float64Histogram
+	uploadSize             metric.Int64Histogram
+	processing             metric.Int64Counter
+	processTime            metric.Float64Histogram
+	publishes              metric.Int64Counter
+	publishTime            metric.Float64Histogram
+	consumes               metric.Int64Counter
+	consumeTime            metric.Float64Histogram
+	retries                metric.Int64Counter
+	dlq                    metric.Int64Counter
+	queueDepth             metric.Int64ObservableGauge
+	queueValues            sync.Map
+	dependencyAvailability metric.Int64ObservableGauge
+	dependencyValues       sync.Map
 }
 
 type queueDepthValue struct {
 	system      string
 	destination string
 	value       atomic.Int64
+}
+
+type dependencyAvailabilityValue struct {
+	dependency string
+	value      atomic.Int64
 }
 
 func newMetricSet() *metricSet { return &metricSet{} }
@@ -63,6 +70,7 @@ func (m *metricSet) init() {
 		m.retries, _ = meter.Int64Counter("messaging.retry", metric.WithDescription("Количество повторных попыток обработки сообщений."))
 		m.dlq, _ = meter.Int64Counter("messaging.dlq", metric.WithDescription("Количество сообщений, отправленных в очередь недоставленных."))
 		m.queueDepth, _ = meter.Int64ObservableGauge("messaging.queue.depth", metric.WithDescription("Количество сообщений, обрабатываемых consumer-компонентами в данный момент."))
+		m.dependencyAvailability, _ = meter.Int64ObservableGauge("dependency.availability", metric.WithDescription("Последнее состояние доступности внешней зависимости: 1 — доступна, 0 — недоступна."))
 		_, _ = meter.RegisterCallback(func(_ context.Context, observer metric.Observer) error {
 			m.queueValues.Range(func(_, raw any) bool {
 				value := raw.(*queueDepthValue)
@@ -72,8 +80,15 @@ func (m *metricSet) init() {
 				))
 				return true
 			})
+			m.dependencyValues.Range(func(_, raw any) bool {
+				value := raw.(*dependencyAvailabilityValue)
+				observer.ObserveInt64(m.dependencyAvailability, value.value.Load(), metric.WithAttributes(
+					attribute.String("dependency", value.dependency),
+				))
+				return true
+			})
 			return nil
-		}, m.queueDepth)
+		}, m.queueDepth, m.dependencyAvailability)
 	})
 }
 
@@ -196,4 +211,22 @@ func ChangeQueueDepth(system, destination string, delta int64) {
 		value = value.(*queueDepthValue)
 	}
 	value.(*queueDepthValue).value.Add(delta)
+}
+
+// SetDependencyAvailability сохраняет результат последней проверки зависимости.
+// Метка dependency ограничена именами database, storage и broker.
+func SetDependencyAvailability(dependency string, available bool) {
+	if dependency != "database" && dependency != "storage" && dependency != "broker" {
+		return
+	}
+	metrics.init()
+	value, loaded := metrics.dependencyValues.LoadOrStore(dependency, &dependencyAvailabilityValue{dependency: dependency})
+	if !loaded {
+		value = value.(*dependencyAvailabilityValue)
+	}
+	state := int64(0)
+	if available {
+		state = 1
+	}
+	value.(*dependencyAvailabilityValue).value.Store(state)
 }

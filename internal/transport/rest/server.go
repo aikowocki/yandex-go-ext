@@ -10,6 +10,7 @@ import (
 
 	"github.com/aikowocki/yandex-go-ext/internal/config"
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
+	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 	restmiddleware "github.com/aikowocki/yandex-go-ext/internal/transport/rest/middleware"
 	avatarusecase "github.com/aikowocki/yandex-go-ext/internal/usecase/avatar"
@@ -100,15 +101,18 @@ func healthResponse(c echo.Context, checks DependencyChecks) error {
 		"broker":   checks.Broker,
 	} {
 		if check == nil {
+			observability.SetDependencyAvailability(name, false)
 			components[name] = "not_configured"
 			healthy = false
 			continue
 		}
 		if err := check(ctx); err != nil {
+			observability.SetDependencyAvailability(name, false)
 			components[name] = "unhealthy"
 			healthy = false
 			continue
 		}
+		observability.SetDependencyAvailability(name, true)
 		components[name] = "ok"
 	}
 

@@ -44,6 +44,9 @@ jobs:
       - name: Generate unit test coverage
         run: go test ./internal/... -covermode=atomic -coverpkg=./internal/... -coverprofile=coverage-unit.out
 
+      - name: Test Prometheus alert rules
+        run: docker run --rm --entrypoint /bin/promtool -v "${{ github.workspace }}/deployments/observability/rules:/etc/prometheus/rules:ro" prom/prometheus:v3.13.0 test rules /etc/prometheus/rules/gophprofile-alerts.test.yml
+
       - name: Check unit test coverage
         uses: vladopajic/go-test-coverage@v2
         with:

@@ -1,6 +1,6 @@
 global:
   resolve_timeout: 1m
-  smtp_smarthost: mailhog:1025
+  smtp_smarthost: mailpit:1025
   smtp_from: alertmanager@gophprofile.local
   smtp_require_tls: false
 

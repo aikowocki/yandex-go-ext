@@ -98,14 +98,14 @@ services:
         /opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka:9092 --alter --entity-type topics --entity-name avatar.deleted.dlq --add-config cleanup.policy=delete,retention.ms=2592000000
     restart: "no"
 
-  mailhog:
-    image: mailhog/mailhog:v1.0.1
+  mailpit:
+    image: axllent/mailpit:v1.27.8
     restart: unless-stopped
     ports:
       - "1025:1025"
       - "8025:8025"
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8025/api/v2/messages"]
+      test: ["CMD", "/mailpit", "readyz"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -239,11 +239,12 @@ services:
     image: prom/alertmanager:v0.28.1
     restart: unless-stopped
     depends_on:
-      mailhog:
+      mailpit:
         condition: service_healthy
     command:
       - --config.file=/etc/alertmanager/alertmanager.yaml
       - --storage.path=/alertmanager
+      - --web.external-url=http://localhost:9093
     volumes:
       - ../observability/alertmanager.yaml:/etc/alertmanager/alertmanager.yaml:ro
       - alertmanager-data:/alertmanager

@@ -10,6 +10,7 @@ type OutboxEvent struct {
 	ID            string
 	Topic         string
 	Payload       []byte
+	Headers       map[string]string
 	CreatedAt     time.Time
 	Attempts      int
 	NextAttemptAt time.Time

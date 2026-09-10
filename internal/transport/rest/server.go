@@ -10,11 +10,13 @@ import (
 
 	"github.com/aikowocki/yandex-go-ext/internal/config"
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
+	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 	restmiddleware "github.com/aikowocki/yandex-go-ext/internal/transport/rest/middleware"
 	avatarusecase "github.com/aikowocki/yandex-go-ext/internal/usecase/avatar"
 	"github.com/labstack/echo/v4"
 	echoMiddleware "github.com/labstack/echo/v4/middleware"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
 )
 
 // Server обслуживает HTTP-запросы приложения.
@@ -51,6 +53,10 @@ func NewServer(
 
 	e := echo.New()
 	e.HideBanner = true
+	e.Use(otelecho.Middleware("gophprofile-server", otelecho.WithSkipper(func(c echo.Context) bool {
+		return c.Path() == "/health"
+	})))
+	e.Use(metricsMiddleware())
 	e.Use(restmiddleware.RequestLogger(logger))
 	e.Use(restmiddleware.Recovery())
 	e.Use(restmiddleware.CORS())
@@ -95,15 +101,18 @@ func healthResponse(c echo.Context, checks DependencyChecks) error {
 		"broker":   checks.Broker,
 	} {
 		if check == nil {
+			observability.SetDependencyAvailability(name, false)
 			components[name] = "not_configured"
 			healthy = false
 			continue
 		}
 		if err := check(ctx); err != nil {
+			observability.SetDependencyAvailability(name, false)
 			components[name] = "unhealthy"
 			healthy = false
 			continue
 		}
+		observability.SetDependencyAvailability(name, true)
 		components[name] = "ok"
 	}
 

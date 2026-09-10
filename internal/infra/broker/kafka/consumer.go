@@ -3,10 +3,12 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/IBM/sarama"
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
+	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 )
 
@@ -123,15 +125,43 @@ func (h *consumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 				session.MarkMessage(message, "")
 				continue
 			}
-			if err := contracts.HandleWithRetry(session.Context(), contractMessage, handler, h.broker.maxAttempts); err != nil {
-				if dlqErr := h.broker.publishToDLQ(session.Context(), message.Topic, contractMessage, err); dlqErr != nil {
+			messageCtx := observability.ExtractMessageContext(session.Context(), contractMessage.Headers)
+			messageCtx, span := observability.StartConsumerSpan(messageCtx, "kafka", message.Topic, deliveryAttempt(contractMessage))
+			observability.ChangeQueueDepth("kafka", message.Topic, 1)
+			started := time.Now()
+			err := contracts.HandleWithRetryObserved(messageCtx, contractMessage, handler, h.broker.maxAttempts, func(int) {
+				observability.RecordMessagingRetry(messageCtx, "kafka", message.Topic, false)
+			})
+			observability.ChangeQueueDepth("kafka", message.Topic, -1)
+			status := "success"
+			if err != nil {
+				status = "error"
+			}
+			duration := time.Since(started)
+			observability.RecordMessagingConsume(messageCtx, "kafka", message.Topic, status, duration)
+			logging.LogMessagingConsume(messageCtx, "kafka", message.Topic, contractMessage.ID, status, duration, err)
+			observability.FinishMessagingSpan(span, err)
+			if err != nil {
+				observability.RecordMessagingRetry(messageCtx, "kafka", message.Topic, true)
+				if dlqErr := h.broker.publishToDLQ(messageCtx, message.Topic, contractMessage, err); dlqErr != nil {
 					return fmt.Errorf("publish Kafka dlq for %s: %w", message.Topic, dlqErr)
 				}
-				logging.Error(session.Context(), "failed to handle Kafka message; sent to dlq", logging.Err(err), logging.String("topic", message.Topic), logging.String("message_id", contractMessage.ID))
+				logging.Error(messageCtx, "failed to handle Kafka message; sent to dlq", logging.Err(err), logging.String("topic", message.Topic), logging.String("message_id", contractMessage.ID))
 				session.MarkMessage(message, "")
 				continue
 			}
 			session.MarkMessage(message, "")
 		}
 	}
+}
+
+func deliveryAttempt(message *contracts.Message) int {
+	if message == nil {
+		return 1
+	}
+	attempt, err := strconv.Atoi(message.Headers[contracts.DeliveryAttemptHeader])
+	if err != nil || attempt < 1 {
+		return 1
+	}
+	return attempt
 }

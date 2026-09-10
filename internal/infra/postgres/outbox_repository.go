@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -42,7 +43,7 @@ func (r *OutboxRepository) ClaimPending(ctx context.Context, limit int, lease ti
 	}
 	result := make([]*contracts.OutboxEvent, 0, len(rows))
 	for _, row := range rows {
-		result = append(result, outboxEventFromValues(fromPGUUID(row.ID), row.Topic, row.Payload, row.Attempts, row.NextAttemptAt.Time, row.LastError, row.CreatedAt.Time))
+		result = append(result, outboxEventFromValues(fromPGUUID(row.ID), row.Topic, row.Payload, row.Headers, row.Attempts, row.NextAttemptAt.Time, row.LastError, row.CreatedAt.Time))
 	}
 	return result, nil
 }
@@ -65,10 +66,18 @@ func (r *OutboxRepository) Save(ctx context.Context, event *contracts.OutboxEven
 	if event.NextAttemptAt.IsZero() {
 		event.NextAttemptAt = event.CreatedAt
 	}
+	headers, err := json.Marshal(event.Headers)
+	if err != nil {
+		return fmt.Errorf("save outbox event: encode headers: %w", err)
+	}
+	if len(headers) == 0 || string(headers) == "null" {
+		headers = []byte("{}")
+	}
 	err = r.q(ctx).SaveOutboxEvent(ctx, gen.SaveOutboxEventParams{
 		ID:            toPGUUID(id),
 		Topic:         event.Topic,
 		Payload:       event.Payload,
+		Headers:       headers,
 		Attempts:      int32(event.Attempts),
 		NextAttemptAt: toPGTime(&event.NextAttemptAt),
 		LastError:     event.LastError,
@@ -94,7 +103,7 @@ func (r *OutboxRepository) ListPending(ctx context.Context, limit int) ([]*contr
 	}
 	result := make([]*contracts.OutboxEvent, 0, len(rows))
 	for _, row := range rows {
-		result = append(result, outboxEventFromValues(fromPGUUID(row.ID), row.Topic, row.Payload, row.Attempts, row.NextAttemptAt.Time, row.LastError, row.CreatedAt.Time))
+		result = append(result, outboxEventFromValues(fromPGUUID(row.ID), row.Topic, row.Payload, row.Headers, row.Attempts, row.NextAttemptAt.Time, row.LastError, row.CreatedAt.Time))
 	}
 	return result, nil
 }
@@ -141,11 +150,16 @@ func (r *OutboxRepository) MarkFailed(ctx context.Context, id string, reason str
 	return nil
 }
 
-func outboxEventFromValues(id uuid.UUID, topic string, payload []byte, attempts int32, nextAttemptAt time.Time, lastError string, createdAt time.Time) *contracts.OutboxEvent {
+func outboxEventFromValues(id uuid.UUID, topic string, payload, rawHeaders []byte, attempts int32, nextAttemptAt time.Time, lastError string, createdAt time.Time) *contracts.OutboxEvent {
+	headers := make(map[string]string)
+	if err := json.Unmarshal(rawHeaders, &headers); err != nil {
+		headers = make(map[string]string)
+	}
 	return &contracts.OutboxEvent{
 		ID:            id.String(),
 		Topic:         topic,
 		Payload:       payload,
+		Headers:       headers,
 		Attempts:      int(attempts),
 		NextAttemptAt: nextAttemptAt,
 		LastError:     lastError,

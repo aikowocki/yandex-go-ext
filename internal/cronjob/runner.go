@@ -73,7 +73,9 @@ func New(
 }
 
 // RunRetention удаляет устаревшие записи и blob-ы.
-func (r *Runner) RunRetention(ctx context.Context) error {
+func (r *Runner) RunRetention(ctx context.Context) (err error) {
+	ctx, span := startCronjobSpan(ctx, "retention")
+	defer func() { finishCronjobSpan(span, err) }()
 	if r == nil {
 		return fmt.Errorf("run retention: runner is nil")
 	}
@@ -138,7 +140,9 @@ func (r *Runner) RunRetention(ctx context.Context) error {
 }
 
 // RunReconcile удаляет объекты хранилища без ссылок в базе.
-func (r *Runner) RunReconcile(ctx context.Context) error {
+func (r *Runner) RunReconcile(ctx context.Context) (err error) {
+	ctx, span := startCronjobSpan(ctx, "reconcile")
+	defer func() { finishCronjobSpan(span, err) }()
 	if r == nil || r.storageLister == nil || r.blobRetention == nil || r.storage == nil {
 		return fmt.Errorf("run reconcile: required storage capabilities are not configured")
 	}

@@ -27,7 +27,7 @@ UPDATE outbox_events AS events
 SET claimed_until = NOW() + ($2 * INTERVAL '1 second')
 FROM candidates
 WHERE events.id = candidates.id
-RETURNING events.id, events.topic, events.payload, events.attempts,
+RETURNING events.id, events.topic, events.payload, events.headers, events.attempts,
           events.next_attempt_at, events.last_error, events.created_at
 `
 
@@ -40,6 +40,7 @@ type ClaimPendingOutboxEventsRow struct {
 	ID            pgtype.UUID        `json:"id"`
 	Topic         string             `json:"topic"`
 	Payload       []byte             `json:"payload"`
+	Headers       []byte             `json:"headers"`
 	Attempts      int32              `json:"attempts"`
 	NextAttemptAt pgtype.Timestamptz `json:"next_attempt_at"`
 	LastError     string             `json:"last_error"`
@@ -59,6 +60,7 @@ func (q *Queries) ClaimPendingOutboxEvents(ctx context.Context, arg ClaimPending
 			&i.ID,
 			&i.Topic,
 			&i.Payload,
+			&i.Headers,
 			&i.Attempts,
 			&i.NextAttemptAt,
 			&i.LastError,
@@ -75,7 +77,7 @@ func (q *Queries) ClaimPendingOutboxEvents(ctx context.Context, arg ClaimPending
 }
 
 const listPendingOutboxEvents = `-- name: ListPendingOutboxEvents :many
-SELECT id, topic, payload, attempts, next_attempt_at, last_error, created_at
+SELECT id, topic, payload, headers, attempts, next_attempt_at, last_error, created_at
 FROM outbox_events
 WHERE published_at IS NULL
   AND next_attempt_at <= NOW()
@@ -88,6 +90,7 @@ type ListPendingOutboxEventsRow struct {
 	ID            pgtype.UUID        `json:"id"`
 	Topic         string             `json:"topic"`
 	Payload       []byte             `json:"payload"`
+	Headers       []byte             `json:"headers"`
 	Attempts      int32              `json:"attempts"`
 	NextAttemptAt pgtype.Timestamptz `json:"next_attempt_at"`
 	LastError     string             `json:"last_error"`
@@ -107,6 +110,7 @@ func (q *Queries) ListPendingOutboxEvents(ctx context.Context, limit int32) ([]L
 			&i.ID,
 			&i.Topic,
 			&i.Payload,
+			&i.Headers,
 			&i.Attempts,
 			&i.NextAttemptAt,
 			&i.LastError,
@@ -149,14 +153,15 @@ func (q *Queries) MarkOutboxEventPublished(ctx context.Context, id pgtype.UUID) 
 }
 
 const saveOutboxEvent = `-- name: SaveOutboxEvent :exec
-INSERT INTO outbox_events (id, topic, payload, attempts, next_attempt_at, last_error, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO outbox_events (id, topic, payload, headers, attempts, next_attempt_at, last_error, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 `
 
 type SaveOutboxEventParams struct {
 	ID            pgtype.UUID        `json:"id"`
 	Topic         string             `json:"topic"`
 	Payload       []byte             `json:"payload"`
+	Headers       []byte             `json:"headers"`
 	Attempts      int32              `json:"attempts"`
 	NextAttemptAt pgtype.Timestamptz `json:"next_attempt_at"`
 	LastError     string             `json:"last_error"`
@@ -168,6 +173,7 @@ func (q *Queries) SaveOutboxEvent(ctx context.Context, arg SaveOutboxEventParams
 		arg.ID,
 		arg.Topic,
 		arg.Payload,
+		arg.Headers,
 		arg.Attempts,
 		arg.NextAttemptAt,
 		arg.LastError,

@@ -3,22 +3,42 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aikowocki/yandex-go-ext/internal/app/providers"
 	"github.com/aikowocki/yandex-go-ext/internal/app/providers/components"
+	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 )
 
 // New собирает зависимости приложения.
-func New(ctx context.Context) (*Container, error) {
+func New(ctx context.Context, serviceName string) (*Container, error) {
 	cfg, err := providers.NewConfig()
 	if err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
 
+	telemetry, err := observability.New(ctx, cfg.Observability, serviceName)
+	if err != nil {
+		return nil, fmt.Errorf("observability: %w", err)
+	}
+	telemetry.SetupGlobals()
+
 	logger, err := logging.New(cfg.Log)
 	if err != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = telemetry.Shutdown(shutdownCtx)
+		cancel()
 		return nil, fmt.Errorf("logger: %w", err)
+	}
+	// Добавляем в логи информацию о сервисе и окружении.
+	logger = logger.With(
+		logging.String("service.name", serviceName),
+		logging.String("service.version", cfg.Observability.ServiceVersion),
+		logging.String("deployment.environment.name", cfg.Observability.Environment),
+	)
+	if otelLogger := telemetry.Logger("github.com/aikowocki/yandex-go-ext/internal/app"); otelLogger != nil {
+		logger = logging.WithOTelLogger(logger, otelLogger)
 	}
 	restoreLogger := logging.Install(logger)
 	appLogger := logging.ComponentLogger(logger, "app")
@@ -30,6 +50,9 @@ func New(ctx context.Context) (*Container, error) {
 	cleanupLogger := true
 	defer func() {
 		if cleanupLogger {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = telemetry.Shutdown(shutdownCtx)
+			cancel()
 			restoreLogger()
 			_ = logger.Sync()
 		}
@@ -74,6 +97,7 @@ func New(ctx context.Context) (*Container, error) {
 		Worker:        avatarComponents.Worker,
 		Server:        server,
 		logger:        appLogger,
+		telemetry:     telemetry,
 		restoreLogger: restoreLogger,
 	}
 	cleanupLogger = false

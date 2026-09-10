@@ -3,14 +3,16 @@ package rabbitmq
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
+	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 // Publish отправляет сообщение в RabbitMQ.
-func (b *Broker) Publish(ctx context.Context, topic string, msg *contracts.Message) error {
+func (b *Broker) Publish(ctx context.Context, topic string, msg *contracts.Message) (err error) {
 	if msg == nil {
 		return fmt.Errorf("message is nil")
 	}
@@ -26,6 +28,22 @@ func (b *Broker) Publish(ctx context.Context, topic string, msg *contracts.Messa
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if msg.Headers == nil {
+		msg.Headers = make(map[string]string)
+	}
+	ctx, span := observability.StartProducerSpan(ctx, "rabbitmq", topic)
+	started := time.Now()
+	defer func() {
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		duration := time.Since(started)
+		observability.RecordMessagingPublish(ctx, "rabbitmq", topic, status, duration)
+		logging.LogMessagingPublish(ctx, "rabbitmq", topic, msg.ID, status, duration, err)
+		observability.FinishMessagingSpan(span, err)
+	}()
+	observability.InjectMessageContext(ctx, msg.Headers)
 
 	headers := cloneHeaders(msg.Headers)
 	if msg.ID != "" {
@@ -42,7 +60,6 @@ func (b *Broker) Publish(ctx context.Context, topic string, msg *contracts.Messa
 	if err := b.publishConfirmed(ctx, topic, msg.ID, publishing); err != nil {
 		return fmt.Errorf("publish rabbitmq message: %w", err)
 	}
-	logging.Debug(ctx, "published broker message", logging.String("broker", "rabbitmq"), logging.String("topic", topic), logging.String("message_id", msg.ID))
 	return nil
 }
 

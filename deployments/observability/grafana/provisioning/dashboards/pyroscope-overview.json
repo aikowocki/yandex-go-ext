@@ -1,0 +1,178 @@
+{
+  "uid": "gophprofile-pyroscope",
+  "title": "GophProfile / Continuous Profiling",
+  "description": "CPU, memory и goroutine профили для GophProfile.",
+  "tags": ["gophprofile", "observability", "pyroscope", "profiling"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "custom",
+        "query": "gophprofile-server,gophprofile-worker,gophprofile-cronjob",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "current": { "selected": true, "text": "gophprofile-server", "value": "gophprofile-server" },
+        "options": [
+          { "selected": true, "text": "gophprofile-server", "value": "gophprofile-server" },
+          { "selected": false, "text": "gophprofile-worker", "value": "gophprofile-worker" },
+          { "selected": false, "text": "gophprofile-cronjob", "value": "gophprofile-cronjob" }
+        ]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Continuous profiling",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "Выберите сервис сверху и анализируйте flame graph за выбранный диапазон времени. Профили отправляются каждые 15 секунд из Go-приложений в Pyroscope.\n\n**Подсказка:** увеличьте временной диапазон для общей картины или сузьте его до момента нагрузки для поиска конкретного узкого места."
+      }
+    },
+    {
+      "id": 2,
+      "type": "row",
+      "title": "CPU",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 4 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 3,
+      "type": "flamegraph",
+      "title": "CPU profile",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 5 },
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope" },
+      "targets": [
+        {
+          "refId": "A",
+          "labelSelector": "{service_name=\"$service\"}",
+          "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds",
+          "queryType": "profile",
+          "groupBy": [],
+          "spanSelector": []
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "row",
+      "title": "Memory",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 5,
+      "type": "flamegraph",
+      "title": "Allocated memory — objects",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope" },
+      "targets": [
+        {
+          "refId": "A",
+          "labelSelector": "{service_name=\"$service\"}",
+          "profileTypeId": "memory:alloc_objects:count:space:count",
+          "queryType": "profile",
+          "groupBy": [],
+          "spanSelector": []
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "flamegraph",
+      "title": "Allocated memory — bytes",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope" },
+      "targets": [
+        {
+          "refId": "A",
+          "labelSelector": "{service_name=\"$service\"}",
+          "profileTypeId": "memory:alloc_space:bytes:space:bytes",
+          "queryType": "profile",
+          "groupBy": [],
+          "spanSelector": []
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "flamegraph",
+      "title": "In-use memory — objects",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 25 },
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope" },
+      "targets": [
+        {
+          "refId": "A",
+          "labelSelector": "{service_name=\"$service\"}",
+          "profileTypeId": "memory:inuse_objects:count:objects:count",
+          "queryType": "profile",
+          "groupBy": [],
+          "spanSelector": []
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "flamegraph",
+      "title": "In-use memory — bytes",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 25 },
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope" },
+      "targets": [
+        {
+          "refId": "A",
+          "labelSelector": "{service_name=\"$service\"}",
+          "profileTypeId": "memory:inuse_space:bytes:space:bytes",
+          "queryType": "profile",
+          "groupBy": [],
+          "spanSelector": []
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Goroutines",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 34 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "flamegraph",
+      "title": "Goroutine profile",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 35 },
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope" },
+      "targets": [
+        {
+          "refId": "A",
+          "labelSelector": "{service_name=\"$service\"}",
+          "profileTypeId": "goroutine:goroutine:count:goroutine:count",
+          "queryType": "profile",
+          "groupBy": [],
+          "spanSelector": []
+        }
+      ]
+    }
+  ],
+  "annotations": { "list": [] },
+  "links": [
+    {
+      "title": "Открыть Pyroscope Explore",
+      "type": "link",
+      "url": "http://localhost:3000/explore?orgId=1&left=%7B%22datasource%22:%22pyroscope%22%7D",
+      "targetBlank": true,
+      "icon": "external link"
+    }
+  ]
+}

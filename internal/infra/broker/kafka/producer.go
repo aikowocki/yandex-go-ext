@@ -7,17 +7,34 @@ import (
 
 	"github.com/IBM/sarama"
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
+	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 )
 
 // Publish отправляет сообщение в Kafka.
-func (b *Broker) Publish(ctx context.Context, topic string, msg *contracts.Message) error {
+func (b *Broker) Publish(ctx context.Context, topic string, msg *contracts.Message) (err error) {
 	if msg == nil || topic == "" {
 		return fmt.Errorf("topic and message are required")
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if msg.Headers == nil {
+		msg.Headers = make(map[string]string)
+	}
+	ctx, span := observability.StartProducerSpan(ctx, "kafka", topic)
+	started := time.Now()
+	defer func() {
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		duration := time.Since(started)
+		observability.RecordMessagingPublish(ctx, "kafka", topic, status, duration)
+		logging.LogMessagingPublish(ctx, "kafka", topic, msg.ID, status, duration, err)
+		observability.FinishMessagingSpan(span, err)
+	}()
+	observability.InjectMessageContext(ctx, msg.Headers)
 
 	headers := make([]sarama.RecordHeader, 0, len(msg.Headers)+2)
 	headers = append(headers,
@@ -37,10 +54,8 @@ func (b *Broker) Publish(ctx context.Context, topic string, msg *contracts.Messa
 		Value:   sarama.ByteEncoder(msg.Payload),
 		Headers: headers,
 	}
-	partition, offset, err := b.producer.SendMessage(kafkaMessage)
-	if err != nil {
+	if _, _, err := b.producer.SendMessage(kafkaMessage); err != nil {
 		return fmt.Errorf("send kafka message: %w", err)
 	}
-	logging.Debug(ctx, "published broker message", logging.String("broker", "kafka"), logging.String("topic", topic), logging.String("message_id", msg.ID), logging.Int32("partition", partition), logging.Int64("offset", offset))
 	return nil
 }

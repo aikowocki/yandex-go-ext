@@ -13,7 +13,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	defer stop()
 
-	container, err := app.New(ctx)
+	container, err := app.New(ctx, "gophprofile-worker")
 	if err != nil {
 		log.Fatal("initialize worker dependencies:", err)
 	}

@@ -30,7 +30,7 @@ func WithLogger(ctx context.Context, logger Logger) context.Context {
 	if logger == nil {
 		return ctx
 	}
-	return context.WithValue(ctx, loggerContextKey{}, logger)
+	return context.WithValue(ctx, loggerContextKey{}, withTraceCorrelation(logger))
 }
 
 // LoggerFromContext возвращает logger, явно привязанный к ctx.
@@ -47,6 +47,7 @@ func ComponentLogger(logger Logger, component string) Logger {
 	if logger == nil {
 		logger = L()
 	}
+	logger = withTraceCorrelation(logger)
 	if strings.TrimSpace(component) == "" {
 		return logger
 	}
@@ -128,7 +129,7 @@ type loggerState struct {
 
 func newDispatcher() *dispatcher {
 	d := &dispatcher{}
-	d.base.Store(loggerState{logger: zapbackend.NewNop()})
+	d.base.Store(loggerState{logger: withTraceCorrelation(zapbackend.NewNop())})
 	return d
 }
 
@@ -153,7 +154,7 @@ func (d *dispatcher) emit(ctx context.Context, level Level, message string, args
 	attrs := normalizeArgs(args)
 	logger := d.loggerFor(ctx)
 	if sink := SinkFromContext(ctx); sink != nil {
-		if _, child := logger.(*childLogger); !child {
+		if !isChildLogger(logger) {
 			sink.Record(level, message, attrs...)
 		}
 	}
@@ -191,6 +192,17 @@ func (d *dispatcher) Sync() error { return d.current().Sync() }
 type childLogger struct {
 	backend Logger
 	attrs   []Attr
+}
+
+func isChildLogger(logger Logger) bool {
+	switch value := logger.(type) {
+	case *childLogger:
+		return true
+	case *traceCorrelatingLogger:
+		return isChildLogger(value.backend)
+	default:
+		return false
+	}
 }
 
 func newChildLogger(backend Logger, attrs ...Attr) Logger {
@@ -250,9 +262,11 @@ func New(cfg config.LogConfig) (Logger, error) {
 	}
 	switch backend {
 	case "slog":
-		return slogbackend.New(cfg)
+		logger, err := slogbackend.New(cfg)
+		return withTraceCorrelation(logger), err
 	case "zap":
-		return zapbackend.New(cfg)
+		logger, err := zapbackend.New(cfg)
+		return withTraceCorrelation(logger), err
 	default:
 		return nil, fmt.Errorf("unknown log backend %q: expected slog or zap", cfg.Backend)
 	}
@@ -263,7 +277,7 @@ func Install(logger Logger) func() {
 	if logger == nil {
 		logger = zapbackend.NewNop()
 	}
-	previous := global.set(logger)
+	previous := global.set(withTraceCorrelation(logger))
 	return func() { global.set(previous) }
 }
 

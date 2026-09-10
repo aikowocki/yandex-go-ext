@@ -6,6 +6,7 @@ import (
 	"github.com/aikowocki/yandex-go-ext/internal/app/providers/components"
 	"github.com/aikowocki/yandex-go-ext/internal/config"
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
+	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	"github.com/aikowocki/yandex-go-ext/internal/infra/postgres"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 	"github.com/aikowocki/yandex-go-ext/internal/transport/rest"
@@ -22,6 +23,7 @@ type Container struct {
 	Server *rest.Server
 
 	logger        logging.Logger
+	telemetry     *observability.Provider
 	restoreLogger func()
 	closeOnce     sync.Once
 	closeErr      error

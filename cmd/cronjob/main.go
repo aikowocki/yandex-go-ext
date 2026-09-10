@@ -7,9 +7,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/aikowocki/yandex-go-ext/internal/app/providers"
 	"github.com/aikowocki/yandex-go-ext/internal/cronjob"
+	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	"github.com/aikowocki/yandex-go-ext/internal/infra/postgres"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 )
@@ -24,6 +26,7 @@ func run() error {
 	if len(os.Args) != 2 {
 		return fmt.Errorf("usage: cronjob <retention|reconcile>")
 	}
+	job := os.Args[1]
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -35,6 +38,26 @@ func run() error {
 	logger, err := logging.New(cfg.Log)
 	if err != nil {
 		return fmt.Errorf("create logger: %w", err)
+	}
+
+	telemetry, err := observability.New(ctx, cfg.Observability, "gophprofile-cronjob")
+	if err != nil {
+		return fmt.Errorf("initialize observability: %w", err)
+	}
+	telemetry.SetupGlobals()
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = telemetry.Shutdown(shutdownCtx)
+	}()
+
+	logger = logger.With(
+		logging.String("service.name", "gophprofile-cronjob"),
+		logging.String("service.version", cfg.Observability.ServiceVersion),
+		logging.String("deployment.environment.name", cfg.Observability.Environment),
+	)
+	if otelLogger := telemetry.Logger("github.com/aikowocki/yandex-go-ext/cmd/cronjob"); otelLogger != nil {
+		logger = logging.WithOTelLogger(logger, otelLogger)
 	}
 	restoreLogger := logging.Install(logger)
 	defer func() {
@@ -49,7 +72,7 @@ func run() error {
 	defer db.Close()
 
 	storageLogger := logging.ComponentLogger(logger, "storage")
-	cronLogger := logging.ComponentLogger(logger, "cronjob")
+	cronLogger := logging.ComponentLogger(logger, "cronjob").With(logging.String("job", job))
 	storage, err := providers.NewObjectStore(ctx, cfg, storageLogger)
 	if err != nil {
 		return fmt.Errorf("open object storage: %w", err)
@@ -60,12 +83,12 @@ func run() error {
 	txManager := postgres.NewTxManager(db)
 	runner := cronjob.New(avatarRepo, thumbnailRepo, blobRepo, storage, storage, txManager, cfg.Worker, cronLogger)
 
-	switch os.Args[1] {
+	switch job {
 	case "retention":
 		return runner.RunRetention(ctx)
 	case "reconcile":
 		return runner.RunReconcile(ctx)
 	default:
-		return fmt.Errorf("unknown cronjob %q: use retention or reconcile", os.Args[1])
+		return fmt.Errorf("unknown cronjob %q: use retention or reconcile", job)
 	}
 }

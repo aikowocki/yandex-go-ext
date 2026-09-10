@@ -3,6 +3,8 @@ package logging
 import (
 	"context"
 	"time"
+
+	"github.com/aikowocki/yandex-go-ext/internal/shared/messaging"
 )
 
 // LogMessagingPublish записывает результат публикации сообщения.
@@ -25,20 +27,13 @@ func LogMessagingConsume(ctx context.Context, system, destination, messageID, ou
 
 func messagingAttrs(system, destination, messageID, outcome string, duration time.Duration) []Attr {
 	attrs := []Attr{
-		String("messaging.system", safeMessagingValue(system)),
-		String("messaging.destination.name", safeMessagingValue(destination)),
-		String("outcome", safeMessagingValue(outcome)),
+		String("messaging.system", messaging.SafeValue(system)),
+		String("messaging.destination.name", messaging.SafeValue(destination)),
+		String("outcome", messaging.SafeValue(outcome)),
 		Duration("duration", duration),
 	}
 	if messageID != "" {
 		attrs = append(attrs, String("message_id", messageID))
 	}
 	return attrs
-}
-
-func safeMessagingValue(value string) string {
-	if value == "" {
-		return "unknown"
-	}
-	return value
 }

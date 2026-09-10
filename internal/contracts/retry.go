@@ -9,6 +9,12 @@ import (
 
 // HandleWithRetry повторяет обработку сообщения и обновляет retry-заголовки.
 func HandleWithRetry(ctx context.Context, msg *Message, handler MessageHandler, maxAttempts int) error {
+	return HandleWithRetryObserved(ctx, msg, handler, maxAttempts, nil)
+}
+
+// HandleWithRetryObserved повторяет обработку сообщения и вызывает onRetry
+// при планировании следующей попытки после ошибки.
+func HandleWithRetryObserved(ctx context.Context, msg *Message, handler MessageHandler, maxAttempts int, onRetry func(attempt int)) error {
 	if handler == nil {
 		return fmt.Errorf("message handler is nil")
 	}
@@ -33,6 +39,9 @@ func HandleWithRetry(ctx context.Context, msg *Message, handler MessageHandler, 
 		}
 		if attempt == maxAttempts {
 			break
+		}
+		if onRetry != nil {
+			onRetry(attempt + 1)
 		}
 
 		delay := min(time.Second*time.Duration(1<<(attempt-1)), 30*time.Second)

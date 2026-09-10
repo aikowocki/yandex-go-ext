@@ -3,6 +3,9 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
@@ -18,6 +21,12 @@ import (
 type DB struct {
 	*pgxpool.Pool
 	metricRegistration metric.Registration
+	outboxPending      atomic.Int64
+	storageUsage       atomic.Int64
+	outboxMetricReady  atomic.Bool
+	storageMetricReady atomic.Bool
+	metricsCancel      context.CancelFunc
+	metricsWG          sync.WaitGroup
 }
 
 // NewPool создаёт и проверяет пул PostgreSQL.
@@ -45,6 +54,7 @@ func NewPool(ctx context.Context, cfg config.DatabaseConfig) (*DB, error) {
 	}
 	db := &DB{Pool: pool}
 	db.registerMetrics()
+	db.startMetricRefresh(ctx)
 	return db, nil
 }
 
@@ -73,19 +83,17 @@ func (db *DB) registerMetrics() {
 	if err != nil {
 		return
 	}
-	registration, err := meter.RegisterCallback(func(ctx context.Context, observer metric.Observer) error {
+	registration, err := meter.RegisterCallback(func(_ context.Context, observer metric.Observer) error {
 		stat := db.Stat()
 		attrs := metric.WithAttributes(attribute.String("db.system", "postgresql"), attribute.String("pool", "primary"))
 		observer.ObserveInt64(connections, int64(stat.MaxConns()), attrs)
 		observer.ObserveInt64(acquired, int64(stat.AcquiredConns()), attrs)
 		observer.ObserveInt64(idle, int64(stat.IdleConns()), attrs)
-		var pending int64
-		if err := db.Pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE published_at IS NULL AND next_attempt_at <= now()`).Scan(&pending); err == nil {
-			observer.ObserveInt64(outboxPending, pending)
+		if db.outboxMetricReady.Load() {
+			observer.ObserveInt64(outboxPending, db.outboxPending.Load(), attrs)
 		}
-		var storageBytes int64
-		if err := db.Pool.QueryRow(ctx, `SELECT COALESCE(sum(size_bytes), 0) FROM blobs WHERE storage_status = 'ready'`).Scan(&storageBytes); err == nil {
-			observer.ObserveInt64(storageUsage, storageBytes, metric.WithAttributes(attribute.String("object.type", "blob")))
+		if db.storageMetricReady.Load() {
+			observer.ObserveInt64(storageUsage, db.storageUsage.Load(), metric.WithAttributes(attribute.String("object.type", "blob")))
 		}
 		return nil
 	}, connections, acquired, idle, outboxPending, storageUsage)
@@ -94,10 +102,47 @@ func (db *DB) registerMetrics() {
 	}
 }
 
+func (db *DB) startMetricRefresh(parent context.Context) {
+	ctx, cancel := context.WithCancel(parent)
+	db.metricsCancel = cancel
+	db.metricsWG.Go(func() {
+		db.refreshMetrics(ctx)
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				db.refreshMetrics(ctx)
+			}
+		}
+	})
+}
+
+func (db *DB) refreshMetrics(parent context.Context) {
+	ctx, cancel := context.WithTimeout(parent, 250*time.Millisecond)
+	defer cancel()
+	var pending int64
+	if err := db.Pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE published_at IS NULL AND next_attempt_at <= now()`).Scan(&pending); err == nil {
+		db.outboxPending.Store(pending)
+		db.outboxMetricReady.Store(true)
+	}
+	var storageBytes int64
+	if err := db.Pool.QueryRow(ctx, `SELECT COALESCE(sum(size_bytes), 0) FROM blobs WHERE storage_status = 'ready'`).Scan(&storageBytes); err == nil {
+		db.storageUsage.Store(storageBytes)
+		db.storageMetricReady.Store(true)
+	}
+}
+
 // Close снимает регистрацию метрик базы данных и закрывает пул PostgreSQL.
 func (db *DB) Close() {
 	if db == nil {
 		return
+	}
+	if db.metricsCancel != nil {
+		db.metricsCancel()
+		db.metricsWG.Wait()
 	}
 	if db.metricRegistration != nil {
 		_ = db.metricRegistration.Unregister()

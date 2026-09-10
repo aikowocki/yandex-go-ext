@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/aikowocki/yandex-go-ext/internal/shared/messaging"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -158,8 +159,8 @@ func safeStatus(status string) string {
 func RecordMessagingPublish(ctx context.Context, system, destination, status string, duration time.Duration) {
 	metrics.init()
 	attrs := metric.WithAttributes(
-		attribute.String("messaging.system", safeMessagingValue(system)),
-		attribute.String("messaging.destination.name", safeMessagingValue(destination)),
+		attribute.String("messaging.system", messaging.SafeValue(system)),
+		attribute.String("messaging.destination.name", messaging.SafeValue(destination)),
 		attribute.String("status", safeStatus(status)),
 	)
 	metrics.publishes.Add(ctx, 1, attrs)
@@ -170,8 +171,8 @@ func RecordMessagingPublish(ctx context.Context, system, destination, status str
 func RecordMessagingConsume(ctx context.Context, system, destination, status string, duration time.Duration) {
 	metrics.init()
 	attrs := metric.WithAttributes(
-		attribute.String("messaging.system", safeMessagingValue(system)),
-		attribute.String("messaging.destination.name", safeMessagingValue(destination)),
+		attribute.String("messaging.system", messaging.SafeValue(system)),
+		attribute.String("messaging.destination.name", messaging.SafeValue(destination)),
 		attribute.String("status", safeStatus(status)),
 	)
 	metrics.consumes.Add(ctx, 1, attrs)
@@ -182,8 +183,8 @@ func RecordMessagingConsume(ctx context.Context, system, destination, status str
 func RecordMessagingRetry(ctx context.Context, system, destination string, deadLetter bool) {
 	metrics.init()
 	attrs := metric.WithAttributes(
-		attribute.String("messaging.system", safeMessagingValue(system)),
-		attribute.String("messaging.destination.name", safeMessagingValue(destination)),
+		attribute.String("messaging.system", messaging.SafeValue(system)),
+		attribute.String("messaging.destination.name", messaging.SafeValue(destination)),
 	)
 	if deadLetter {
 		metrics.dlq.Add(ctx, 1, attrs)
@@ -192,24 +193,14 @@ func RecordMessagingRetry(ctx context.Context, system, destination string, deadL
 	metrics.retries.Add(ctx, 1, attrs)
 }
 
-func safeMessagingValue(value string) string {
-	if value == "" {
-		return "unknown"
-	}
-	return value
-}
-
 // ChangeQueueDepth изменяет число сообщений, которые сейчас обрабатываются consumer.
 func ChangeQueueDepth(system, destination string, delta int64) {
 	metrics.init()
-	key := safeMessagingValue(system) + "\x00" + safeMessagingValue(destination)
-	value, loaded := metrics.queueValues.LoadOrStore(key, &queueDepthValue{
-		system:      safeMessagingValue(system),
-		destination: safeMessagingValue(destination),
+	key := messaging.SafeValue(system) + "\x00" + messaging.SafeValue(destination)
+	value, _ := metrics.queueValues.LoadOrStore(key, &queueDepthValue{
+		system:      messaging.SafeValue(system),
+		destination: messaging.SafeValue(destination),
 	})
-	if !loaded {
-		value = value.(*queueDepthValue)
-	}
 	value.(*queueDepthValue).value.Add(delta)
 }
 
@@ -220,10 +211,7 @@ func SetDependencyAvailability(dependency string, available bool) {
 		return
 	}
 	metrics.init()
-	value, loaded := metrics.dependencyValues.LoadOrStore(dependency, &dependencyAvailabilityValue{dependency: dependency})
-	if !loaded {
-		value = value.(*dependencyAvailabilityValue)
-	}
+	value, _ := metrics.dependencyValues.LoadOrStore(dependency, &dependencyAvailabilityValue{dependency: dependency})
 	state := int64(0)
 	if available {
 		state = 1

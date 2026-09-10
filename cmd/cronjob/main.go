@@ -26,6 +26,7 @@ func run() error {
 	if len(os.Args) != 2 {
 		return fmt.Errorf("usage: cronjob <retention|reconcile>")
 	}
+	job := os.Args[1]
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -43,6 +44,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("initialize observability: %w", err)
 	}
+	telemetry.SetupGlobals()
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -70,7 +72,7 @@ func run() error {
 	defer db.Close()
 
 	storageLogger := logging.ComponentLogger(logger, "storage")
-	cronLogger := logging.ComponentLogger(logger, "cronjob").With(logging.String("job", os.Args[1]))
+	cronLogger := logging.ComponentLogger(logger, "cronjob").With(logging.String("job", job))
 	storage, err := providers.NewObjectStore(ctx, cfg, storageLogger)
 	if err != nil {
 		return fmt.Errorf("open object storage: %w", err)
@@ -81,12 +83,12 @@ func run() error {
 	txManager := postgres.NewTxManager(db)
 	runner := cronjob.New(avatarRepo, thumbnailRepo, blobRepo, storage, storage, txManager, cfg.Worker, cronLogger)
 
-	switch os.Args[1] {
+	switch job {
 	case "retention":
 		return runner.RunRetention(ctx)
 	case "reconcile":
 		return runner.RunReconcile(ctx)
 	default:
-		return fmt.Errorf("unknown cronjob %q: use retention or reconcile", os.Args[1])
+		return fmt.Errorf("unknown cronjob %q: use retention or reconcile", job)
 	}
 }

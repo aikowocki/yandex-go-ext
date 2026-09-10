@@ -22,6 +22,7 @@ func New(ctx context.Context, serviceName string) (*Container, error) {
 	if err != nil {
 		return nil, fmt.Errorf("observability: %w", err)
 	}
+	telemetry.SetupGlobals()
 
 	logger, err := logging.New(cfg.Log)
 	if err != nil {

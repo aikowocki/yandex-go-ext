@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/aikowocki/yandex-go-ext/internal/shared/messaging"
 )
 
 func TestBeginHTTPRecordsCompletionWithoutPanic(t *testing.T) {
@@ -34,10 +36,10 @@ func TestMetricsNormalizeUnsafeValues(t *testing.T) {
 			t.Fatalf("safeStatus(%q) = %q", status, got)
 		}
 	}
-	if got := safeMessagingValue(""); got != "unknown" {
+	if got := messaging.SafeValue(""); got != "unknown" {
 		t.Fatalf("safeMessagingValue(\"\") = %q", got)
 	}
-	if got := safeMessagingValue("kafka"); got != "kafka" {
+	if got := messaging.SafeValue("kafka"); got != "kafka" {
 		t.Fatalf("safeMessagingValue(kafka) = %q", got)
 	}
 }

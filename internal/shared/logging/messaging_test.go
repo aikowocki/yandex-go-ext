@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/aikowocki/yandex-go-ext/internal/shared/messaging"
 )
 
 func TestMessagingLoggingHelpers(t *testing.T) {
@@ -15,10 +17,10 @@ func TestMessagingLoggingHelpers(t *testing.T) {
 	if backend.calls != 2 {
 		t.Fatalf("logging calls = %d, want 2", backend.calls)
 	}
-	if got := safeMessagingValue(""); got != "unknown" {
+	if got := messaging.SafeValue(""); got != "unknown" {
 		t.Fatalf("safeMessagingValue empty = %q", got)
 	}
-	if got := safeMessagingValue("kafka"); got != "kafka" {
+	if got := messaging.SafeValue("kafka"); got != "kafka" {
 		t.Fatalf("safeMessagingValue value = %q", got)
 	}
 	if got := messagingAttrs("", "", "", "", 0); len(got) != 4 {

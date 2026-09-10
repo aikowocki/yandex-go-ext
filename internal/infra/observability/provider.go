@@ -31,12 +31,25 @@ type Provider struct {
 	shutdownErr    error
 }
 
-// New создаёт провайдеры observability для сервиса.
-func New(ctx context.Context, cfg config.ObservabilityConfig, serviceName string) (*Provider, error) {
+// SetupGlobals явно устанавливает глобальные OpenTelemetry-провайдеры и propagator.
+func (p *Provider) SetupGlobals() {
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},
 	))
+	if p == nil {
+		return
+	}
+	if p.tracerProvider != nil {
+		otel.SetTracerProvider(p.tracerProvider)
+	}
+	if p.meterProvider != nil {
+		otel.SetMeterProvider(p.meterProvider)
+	}
+}
+
+// New создаёт провайдеры observability для сервиса.
+func New(ctx context.Context, cfg config.ObservabilityConfig, serviceName string) (*Provider, error) {
 
 	provider := &Provider{}
 	if !cfg.Enabled {
@@ -98,8 +111,6 @@ func New(ctx context.Context, cfg config.ObservabilityConfig, serviceName string
 		sdklog.WithResource(res),
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
 	)
-	otel.SetTracerProvider(provider.tracerProvider)
-	otel.SetMeterProvider(provider.meterProvider)
 	if cfg.PyroscopeEnabled {
 		if cfg.PyroscopeServerAddress == "" {
 			_ = provider.Shutdown(ctx)

@@ -25,6 +25,12 @@ tasks:
       - go build -o bin/worker ./cmd/worker
       - go build -o bin/seed ./cmd/seed
       - go build -o bin/cronjob ./cmd/cronjob
+      - go build -o bin/migrate ./cmd/migrate
+
+  migrate:
+    desc: Выполнить миграции базы данных
+    cmds:
+      - go run ./cmd/migrate
 
   cronjob-retention:
     desc: Однократно запустить retention cronjob

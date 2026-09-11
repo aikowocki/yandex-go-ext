@@ -4,20 +4,23 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"time"
 
 	"github.com/aikowocki/yandex-go-ext/internal/config"
 	"github.com/aikowocki/yandex-go-ext/internal/contracts"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
+	"github.com/aikowocki/yandex-go-ext/internal/shared/resilience"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 // MinIO работает с объектами в MinIO.
 type MinIO struct {
-	logger logging.Logger
-	client *minio.Client
-	bucket string
+	logger  logging.Logger
+	client  *minio.Client
+	bucket  string
+	breaker *resilience.Breaker
 }
 
 // NewMinIO создаёт клиент MinIO и проверяет bucket.
@@ -39,7 +42,7 @@ func NewMinIO(ctx context.Context, cfg config.S3Config, logger logging.Logger) (
 		return nil, fmt.Errorf("create object storage client: %w", err)
 	}
 
-	storage := &MinIO{logger: logger, client: client, bucket: cfg.Bucket}
+	storage := &MinIO{logger: logger, client: client, bucket: cfg.Bucket, breaker: resilience.New(resilience.Config{})}
 	exists, err := client.BucketExists(ctx, cfg.Bucket)
 	if err != nil {
 		return nil, fmt.Errorf("check storage bucket: %w", err)
@@ -61,11 +64,17 @@ func isBucketAlreadyOwned(err error) bool {
 	return response.Code == "BucketAlreadyOwnedByYou"
 }
 
-// Upload загружает объект в MinIO.
+func (s *MinIO) execute(ctx context.Context, fn func() error) error {
+	return s.breaker.Do(ctx, func(error) bool { return true }, fn)
+}
+
 func (s *MinIO) Upload(ctx context.Context, key string, data io.Reader, size int64, contentType string) (err error) {
 	ctx, span := startStorageSpan(ctx, "upload")
 	defer func() { finishStorageSpan(span, err) }()
-	if _, err := s.client.PutObject(ctx, s.bucket, key, data, size, minio.PutObjectOptions{ContentType: contentType}); err != nil {
+	if err := s.execute(ctx, func() error {
+		_, err := s.client.PutObject(ctx, s.bucket, key, data, size, minio.PutObjectOptions{ContentType: contentType})
+		return err
+	}); err != nil {
 		return fmt.Errorf("upload object %q: %w", key, err)
 	}
 	return nil
@@ -74,7 +83,12 @@ func (s *MinIO) Upload(ctx context.Context, key string, data io.Reader, size int
 // Download открывает объект из MinIO.
 func (s *MinIO) Download(ctx context.Context, key string) (io.ReadCloser, error) {
 	ctx, span := startStorageSpan(ctx, "download")
-	object, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+	var object *minio.Object
+	err := s.execute(ctx, func() error {
+		var err error
+		object, err = s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+		return err
+	})
 	if err != nil {
 		finishStorageSpan(span, err)
 		return nil, fmt.Errorf("download object %q: %w", key, err)
@@ -86,7 +100,9 @@ func (s *MinIO) Download(ctx context.Context, key string) (io.ReadCloser, error)
 func (s *MinIO) Delete(ctx context.Context, key string) (err error) {
 	ctx, span := startStorageSpan(ctx, "delete")
 	defer func() { finishStorageSpan(span, err) }()
-	if err := s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{}); err != nil {
+	if err := s.execute(ctx, func() error {
+		return s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
+	}); err != nil {
 		return fmt.Errorf("delete object %q: %w", key, err)
 	}
 	return nil
@@ -99,11 +115,16 @@ func (s *MinIO) GetURL(ctx context.Context, key string, expires time.Duration) (
 	if expires <= 0 {
 		return "", fmt.Errorf("url expiration must be positive")
 	}
-	url, err := s.client.PresignedGetObject(ctx, s.bucket, key, expires, nil)
+	var objUrl *url.URL
+	err = s.execute(ctx, func() error {
+		var err error
+		objUrl, err = s.client.PresignedGetObject(ctx, s.bucket, key, expires, nil)
+		return err
+	})
 	if err != nil {
 		return "", fmt.Errorf("create object url %q: %w", key, err)
 	}
-	return url.String(), nil
+	return objUrl.String(), nil
 }
 
 // HealthCheck проверяет доступность bucket-а MinIO.
@@ -113,8 +134,12 @@ func (s *MinIO) HealthCheck(ctx context.Context) (err error) {
 	if s == nil || s.client == nil {
 		return fmt.Errorf("object storage client is not initialized")
 	}
-	exists, err := s.client.BucketExists(ctx, s.bucket)
-	if err != nil {
+	exists := false
+	if err := s.execute(ctx, func() error {
+		var err error
+		exists, err = s.client.BucketExists(ctx, s.bucket)
+		return err
+	}); err != nil {
 		return fmt.Errorf("check storage bucket: %w", err)
 	}
 	if !exists {
@@ -131,14 +156,19 @@ func (s *MinIO) List(ctx context.Context, prefix string, olderThan time.Time) (r
 		return nil, fmt.Errorf("list storage objects: storage client is not initialized")
 	}
 	objects := make([]contracts.StoredObject, 0)
-	for object := range s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
-		if object.Err != nil {
-			return nil, fmt.Errorf("list storage objects: %w", object.Err)
+	if err := s.execute(ctx, func() error {
+		for object := range s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+			if object.Err != nil {
+				return object.Err
+			}
+			if !olderThan.IsZero() && !object.LastModified.Before(olderThan) {
+				continue
+			}
+			objects = append(objects, contracts.StoredObject{Key: object.Key, LastModified: object.LastModified})
 		}
-		if !olderThan.IsZero() && !object.LastModified.Before(olderThan) {
-			continue
-		}
-		objects = append(objects, contracts.StoredObject{Key: object.Key, LastModified: object.LastModified})
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("list storage objects: %w", err)
 	}
 	return objects, nil
 }

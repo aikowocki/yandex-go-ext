@@ -2,6 +2,7 @@ package rest
 
 import (
 	"github.com/aikowocki/yandex-go-ext/internal/config"
+	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	restmiddleware "github.com/aikowocki/yandex-go-ext/internal/transport/rest/middleware"
 	"github.com/labstack/echo/v4"
 	echoMiddleware "github.com/labstack/echo/v4/middleware"
@@ -12,7 +13,10 @@ func registerRoutes(e *echo.Echo, cfg config.ServerConfig, handler *avatarHandle
 	ratePerSecond := cfg.RateLimitPerSecond
 	burst := cfg.RateLimitBurst
 
+	e.GET("/livez", liveResponse)
+	e.GET("/readyz", func(c echo.Context) error { return healthResponse(c, checks) })
 	e.GET("/health", func(c echo.Context) error { return healthResponse(c, checks) })
+	e.GET("/metrics", echo.WrapHandler(observability.PrometheusHandler()))
 	e.File("/web/upload", "web/index.html")
 	e.POST("/web/upload", restmiddleware.RequireUserID(handler.createAvatar))
 	e.File("/web/gallery/:user_id", "web/gallery.html")

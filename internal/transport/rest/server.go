@@ -54,7 +54,8 @@ func NewServer(
 	e := echo.New()
 	e.HideBanner = true
 	e.Use(otelecho.Middleware("gophprofile-server", otelecho.WithSkipper(func(c echo.Context) bool {
-		return c.Path() == "/health"
+		path := c.Path()
+		return path == "/health" || path == "/livez" || path == "/readyz" || path == "/metrics"
 	})))
 	e.Use(metricsMiddleware())
 	e.Use(restmiddleware.RequestLogger(logger))
@@ -87,6 +88,11 @@ func NewServer(
 
 	address := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	return &Server{logger: logger, echo: e, http: &http.Server{Addr: address, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout, Handler: e}, health: checks}, nil
+}
+
+// liveResponse сообщает, что HTTP-процесс жив без проверки внешних зависимостей.
+func liveResponse(c echo.Context) error {
+	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func healthResponse(c echo.Context, checks DependencyChecks) error {

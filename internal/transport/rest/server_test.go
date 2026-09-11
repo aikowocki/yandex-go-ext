@@ -35,6 +35,9 @@ func TestRoutesMatchSpecification(t *testing.T) {
 		"DELETE /api/v1/users/:user_id/avatar": false,
 		"GET /api/v1/users/:user_id/avatars":   false,
 		"GET /health":                          false,
+		"GET /livez":                           false,
+		"GET /readyz":                          false,
+		"GET /metrics":                         false,
 		"GET /web/upload":                      false,
 		"POST /web/upload":                     false,
 		"GET /web/gallery/:user_id":            false,
@@ -362,5 +365,25 @@ func TestAvatarHandlersValidationErrors(t *testing.T) {
 	}
 	if ctx.Response().Status != http.StatusBadRequest {
 		t.Fatalf("invalid user status = %d", ctx.Response().Status)
+	}
+}
+
+func TestMetricsEndpoint(t *testing.T) {
+	server, err := NewServer(config.ServerConfig{Host: "127.0.0.1", Port: 8080, MaxUploadSize: 10 * 1024 * 1024, RateLimitPerSecond: 10, RateLimitBurst: 20}, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	server.echo.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if contentType := recorder.Header().Get("Content-Type"); contentType == "" {
+		t.Fatal("metrics response has no Content-Type")
+	}
+	if recorder.Body.Len() == 0 {
+		t.Fatal("metrics response is empty")
 	}
 }

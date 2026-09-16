@@ -1,0 +1,31 @@
+{{- if .Values.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "gophprofile.fullname" . }}-migrate
+  labels: {{- include "gophprofile.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: {{ include "gophprofile.name" . }}, app.kubernetes.io/component: migrate}}
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "gophprofile.fullname" . }}
+{{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: migrate
+          image: {{ include "gophprofile.image" (dict "Values" .Values "component" "migrate") | quote }}
+          envFrom:
+            - configMapRef: {name: {{ include "gophprofile.fullname" . }}-config}
+            - secretRef: {name: {{ include "gophprofile.fullname" . }}-secrets}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources: {{- toYaml .Values.resources.migrate | nindent 12 }}
+{{- end }}

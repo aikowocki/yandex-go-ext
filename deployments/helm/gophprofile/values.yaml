@@ -1,0 +1,129 @@
+nameOverride: ""
+fullnameOverride: ""
+namespaceOverride: ""
+
+imagePullSecrets: []
+image:
+  registry: localhost:30002/gophprofile
+  pullPolicy: IfNotPresent
+  tag: dev
+  server: server
+  worker: worker
+  cronjob: cronjob
+  migrate: migrate
+
+replicaCount:
+  server: 2
+  worker: 1
+
+service:
+  port: 8080
+
+ingress:
+  enabled: true
+  className: traefik
+  host: gophprofile.localhost
+  annotations: {}
+  tls: []
+
+config:
+  env: prod
+  serverHost: 0.0.0.0
+  serverPort: "8080"
+  serverReadTimeout: 60s
+  serverWriteTimeout: 60s
+  serverMaxUploadSize: "10485760"
+  serverRateLimitPerSecond: "10"
+  serverRateLimitBurst: "20"
+  s3Bucket: avatars
+  s3UseSSL: "false"
+  s3Region: us-east-1
+  brokerType: kafka
+  kafkaGroupID: gophprofile-workers
+  workerConcurrency: "4"
+  workerRetentionPeriod: 720h
+  workerCleanupInterval: 24h
+  workerReconcileInterval: 168h
+  workerOrphanGracePeriod: 24h
+  workerCleanupBatchSize: "100"
+  logBackend: slog
+  logLevel: info
+  logFormat: json
+  otelEnabled: "true"
+  otelInsecure: "true"
+  otelTraceSampleRatio: "0.1"
+  otelServiceVersion: unknown
+  otelEnvironment: production
+  pyroscopeEnabled: "false"
+
+secrets:
+  externalSecret:
+    enabled: false
+    secretStoreName: vault-backend
+    remoteKey: gophprofile/dev
+  databaseURL: ""
+  s3Endpoint: ""
+  s3AccessKeyID: ""
+  s3SecretAccessKey: ""
+  kafkaBrokers: ""
+  otelEndpoint: ""
+  pyroscopeServerAddress: ""
+  pyroscopeAuthToken: ""
+
+resources:
+  server:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+  worker:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+  cronjob:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 250m, memory: 256Mi}
+  migrate:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 250m, memory: 256Mi}
+
+probes:
+  startup: {path: /livez, initialDelaySeconds: 2, periodSeconds: 5, failureThreshold: 30}
+  liveness: {path: /livez, initialDelaySeconds: 5, periodSeconds: 10, timeoutSeconds: 3, failureThreshold: 3}
+  readiness: {path: /readyz, initialDelaySeconds: 5, periodSeconds: 10, timeoutSeconds: 3, failureThreshold: 3}
+
+hpa:
+  server: {enabled: true, minReplicas: 2, maxReplicas: 10, cpuUtilization: 70, memoryUtilization: 80}
+  worker: {enabled: true, minReplicas: 1, maxReplicas: 10, cpuUtilization: 70, memoryUtilization: 80}
+
+cron:
+  retention: "0 2 * * *"
+  reconcile: "0 3 * * 0"
+  backoffLimit: 2
+  activeDeadlineSeconds: 1800
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
+migration:
+  enabled: true
+  backoffLimit: 5
+  activeDeadlineSeconds: 600
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  labels: {}
+
+networkPolicy:
+  enabled: true
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile: {type: RuntimeDefault}
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: {drop: [ALL]}
+
+terminationGracePeriodSeconds: 30

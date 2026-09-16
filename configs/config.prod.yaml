@@ -1,0 +1,64 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+  read_timeout: 60s
+  write_timeout: 60s
+  max_upload_size: 10485760
+  rate_limit_per_second: 10
+  rate_limit_burst: 20
+
+database:
+  dsn: ""
+  max_conns: 50
+  min_conns: 10
+  max_conn_lifetime: 2h
+  max_conn_idle_time: 1h
+
+s3:
+  endpoint: ""
+  access_key_id: ""
+  secret_access_key: ""
+  bucket: "avatars-production"
+  use_ssl: true
+  region: "us-east-1"
+
+broker:
+  type: "kafka"
+  rabbitmq:
+    url: ""
+    exchange: "avatars"
+    retry_delay: 30s
+    max_attempts: 5
+    queue_type: "quorum"
+  kafka:
+    brokers: []
+    group_id: "gophprofile-workers"
+    max_attempts: 5
+    dlq_suffix: ".dlq"
+    session_timeout: 10s
+    heartbeat_interval: 3s
+    fetch_min_bytes: 1
+    fetch_max_wait: 250ms
+
+worker:
+  concurrency: 16
+  retention_period: 720h
+  cleanup_interval: 24h
+  reconcile_interval: 168h
+  orphan_grace_period: 24h
+  cleanup_batch_size: 500
+
+log:
+  backend: "slog"
+  level: "info"
+  format: "json"
+
+observability:
+  enabled: true
+  otlp_endpoint: "http://otel-collector:4317"
+  otlp_insecure: false
+  trace_sample_ratio: 0.1
+  service_version: "unknown"
+  environment: "production"
+  pyroscope_enabled: false
+  pyroscope_server_address: "http://localhost:4040"

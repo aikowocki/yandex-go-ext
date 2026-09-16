@@ -1,0 +1,33 @@
+version: '3'
+
+tasks:
+  sqlc-generate:
+    desc: Генерирует Go код из SQL-запросов (sqlc.yaml)
+    cmds:
+      - sqlc generate
+
+  mocks-generate:
+    desc: Генерирует моки интерфейсов через mockery (.mockery.yaml)
+    cmds:
+      - mockery
+
+  generate:
+    desc: Прогнать всю кодогенерацию (sqlc, mocks)
+    cmds:
+      - task: sqlc-generate
+      - task: mocks-generate
+
+  build:
+    desc: Собрать бинарные файлы сервиса
+    cmds:
+      - mkdir -p bin
+      - go build -o bin/server ./cmd/server
+      - go build -o bin/worker ./cmd/worker
+      - go build -o bin/seed ./cmd/seed
+      - go build -o bin/cronjob ./cmd/cronjob
+      - go build -o bin/migrate ./cmd/migrate
+
+  migrate:
+    desc: Выполнить миграции базы данных
+    cmds:
+      - go run ./cmd/migrate

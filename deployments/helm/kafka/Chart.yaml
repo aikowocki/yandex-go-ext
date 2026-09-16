@@ -1,0 +1,5 @@
+apiVersion: v2
+name: gophprofile-kafka
+description: Kafka KRaft для GophProfile
+version: 0.1.0
+appVersion: "4.0.0"

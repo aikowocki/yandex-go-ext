@@ -1,0 +1,3 @@
+GophProfile установлен в namespace {{ .Release.Namespace }}.
+
+Server URL: http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}

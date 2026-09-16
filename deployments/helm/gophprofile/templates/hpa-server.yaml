@@ -1,0 +1,18 @@
+{{- if .Values.hpa.server.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "gophprofile.fullname" . }}-server
+  labels: {{- include "gophprofile.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: {{ include "gophprofile.fullname" . }}-server}
+  minReplicas: {{ .Values.hpa.server.minReplicas }}
+  maxReplicas: {{ .Values.hpa.server.maxReplicas }}
+  behavior:
+    scaleDown: {stabilizationWindowSeconds: 300}
+  metrics:
+    - type: Resource
+      resource: {name: cpu, target: {type: Utilization, averageUtilization: {{ .Values.hpa.server.cpuUtilization }}}}
+    - type: Resource
+      resource: {name: memory, target: {type: Utilization, averageUtilization: {{ .Values.hpa.server.memoryUtilization }}}}
+{{- end }}

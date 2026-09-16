@@ -1,0 +1,94 @@
+helmDefaults:
+  wait: true
+  timeout: 600
+  atomic: false
+  cleanupOnFail: false
+  createNamespace: true
+
+repositories:
+  - name: bitnami
+    url: https://charts.bitnami.com/bitnami
+  - name: open-telemetry
+    url: https://open-telemetry.github.io/opentelemetry-helm-charts
+  - name: prometheus-community
+    url: https://prometheus-community.github.io/helm-charts
+  - name: external-secrets
+    url: https://charts.external-secrets.io
+
+environments:
+  dev:
+    values:
+      - ../../environments/helmfile/dev.yaml
+  prod:
+    values:
+      - ../../environments/helmfile/prod.yaml
+
+---
+
+releases:
+  - name: postgres
+    namespace: gophprofile-deps
+    installed: {{ eq .Environment.Name "dev" }}
+    chart: bitnami/postgresql
+    version: {{ .Values.postgresqlChartVersion | quote }}
+    values:
+      - ../../deployments/k3d/postgresql-values-dev.yaml
+
+  - name: minio
+    namespace: gophprofile-deps
+    installed: {{ eq .Environment.Name "dev" }}
+    chart: ../../deployments/helm/minio
+    values:
+      - ../../deployments/k3d/minio-values-dev.yaml
+
+  - name: kafka
+    namespace: gophprofile-deps
+    installed: {{ eq .Environment.Name "dev" }}
+    chart: ../../deployments/helm/kafka
+    values:
+      - ../../deployments/k3d/kafka-values-dev.yaml
+
+  - name: loki
+    namespace: gophprofile-deps
+    installed: {{ eq .Environment.Name "dev" }}
+    chart: ../../deployments/helm/loki
+
+  - name: jaeger
+    namespace: gophprofile-deps
+    installed: {{ eq .Environment.Name "dev" }}
+    chart: ../../deployments/helm/jaeger
+
+  - name: otel-collector
+    namespace: gophprofile-deps
+    installed: {{ eq .Environment.Name "dev" }}
+    chart: open-telemetry/opentelemetry-collector
+    version: {{ .Values.otelChartVersion | quote }}
+    values:
+      - ../../deployments/k3d/otel-values-dev.yaml
+    needs:
+      - gophprofile-deps/loki
+      - gophprofile-deps/jaeger
+
+  - name: kube-prometheus
+    namespace: monitoring
+    installed: {{ eq .Environment.Name "dev" }}
+    chart: prometheus-community/kube-prometheus-stack
+    version: {{ .Values.prometheusStackChartVersion | quote }}
+    values:
+      - ../../deployments/k3d/kube-prometheus-stack-values-dev.yaml
+
+  - name: vault
+    namespace: vault
+    installed: {{ eq .Environment.Name "dev" }}
+    chart: ../../deployments/helm/vault
+
+  - name: external-secrets
+    namespace: external-secrets
+    installed: {{ eq .Environment.Name "dev" }}
+    chart: external-secrets/external-secrets
+    version: {{ .Values.esoChartVersion | quote }}
+    set:
+      - name: installCRDs
+        value: true
+    needs:
+      - vault/vault

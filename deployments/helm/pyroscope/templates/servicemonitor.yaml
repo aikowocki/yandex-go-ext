@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "pyroscope.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "pyroscope.labels" . | nindent 4 }}
+    app.kubernetes.io/name: pyroscope
+spec:
+  selector:
+    matchLabels:
+      {{- include "pyroscope.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+      scrapeTimeout: 10s

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/aikowocki/yandex-go-ext/internal/config"
@@ -132,16 +133,27 @@ func New(ctx context.Context, cfg config.ObservabilityConfig, serviceName string
 			_ = provider.Shutdown(ctx)
 			return nil, errors.New("pyroscope server address is empty")
 		}
+		// Подготовка тегов для Pyroscope (в названиях тегов не должно быть точек)
+		pyroscopeTags := map[string]string{
+			"service_name":     serviceName,
+			"service_version":  cfg.ServiceVersion,
+			"environment_name": cfg.Environment,
+		}
+		// Добавление меток ресурсов из OTEL (замена точек на подчеркивания для совместимости)
+		if res != nil {
+			for _, attr := range res.Attributes() {
+				key := string(attr.Key)
+				value := attr.Value.AsString()
+				cleanKey := strings.ReplaceAll(key, ".", "_")
+				pyroscopeTags[cleanKey] = value
+			}
+		}
 		provider.profiler, err = pyroscope.Start(pyroscope.Config{
 			ApplicationName: serviceName,
 			ServerAddress:   cfg.PyroscopeServerAddress,
 			AuthToken:       cfg.PyroscopeAuthToken,
 			Logger:          pyroscope.StandardLogger,
-			Tags: map[string]string{
-				"service.name":                serviceName,
-				"service.version":             cfg.ServiceVersion,
-				"deployment.environment.name": cfg.Environment,
-			},
+			Tags:            pyroscopeTags,
 			ProfileTypes: []pyroscope.ProfileType{
 				pyroscope.ProfileCPU,
 				pyroscope.ProfileAllocObjects,

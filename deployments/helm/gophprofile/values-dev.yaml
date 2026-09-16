@@ -1,0 +1,21 @@
+imagePullSecrets:
+  - name: harbor-registry
+image:
+  registry: localhost:30002/gophprofile
+  tag: dev
+  pullPolicy: IfNotPresent
+config:
+  env: k8s
+  logLevel: debug
+  logFormat: console
+  otelEnabled: "true"
+  otelEnvironment: development
+secrets:
+  externalSecret:
+    enabled: true
+    secretStoreName: vault-backend
+    remoteKey: gophprofile/dev
+
+ingress:
+  host: gophprofile.localhost
+  tls: []

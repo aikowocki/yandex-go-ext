@@ -17,6 +17,7 @@ func registerRoutes(e *echo.Echo, cfg config.ServerConfig, handler *avatarHandle
 	e.GET("/readyz", func(c echo.Context) error { return healthResponse(c, checks) })
 	e.GET("/health", func(c echo.Context) error { return healthResponse(c, checks) })
 	e.GET("/metrics", echo.WrapHandler(observability.PrometheusHandler()))
+	e.GET("/", func(c echo.Context) error { return c.File("web/index.html") })
 	e.File("/web/upload", "web/index.html")
 	e.POST("/web/upload", restmiddleware.RequireUserID(handler.createAvatar))
 	e.File("/web/gallery/:user_id", "web/gallery.html")

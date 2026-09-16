@@ -1,0 +1,98 @@
+# Локальные значения k3d для prometheus-community/kube-prometheus-stack.
+# В GophProfile Helm chart будет добавлен ServiceMonitor приложений.
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    replicas: 1
+    retention: 24h
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 2Gi
+
+grafana:
+  enabled: true
+  adminPassword: local-change-me
+  plugins:
+    - grafana-pyroscope-datasource
+  persistence:
+    enabled: true
+    type: pvc
+    size: 1Gi
+    storageClassName: local-path
+    accessModes: [ReadWriteOnce]
+  deploymentStrategy:
+    type: Recreate
+  service:
+    type: ClusterIP
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+  additionalDataSources:
+    - name: Loki
+      uid: loki
+      type: loki
+      access: proxy
+      url: http://loki.gophprofile-deps.svc.cluster.local:3100
+      editable: false
+    - name: Jaeger
+      uid: jaeger
+      type: jaeger
+      access: proxy
+      url: http://jaeger.gophprofile-deps.svc.cluster.local:16686
+      editable: false
+    - name: Pyroscope
+      uid: pyroscope
+      type: grafana-pyroscope-datasource
+      access: proxy
+      url: http://pyroscope.gophprofile-deps.svc.cluster.local:4040
+      editable: false
+
+kubeControllerManager:
+  enabled: false
+
+kubeEtcd:
+  enabled: false
+
+kubeScheduler:
+  enabled: false
+
+prometheus:
+  enabled: true
+  prometheusSpec:
+    replicas: 1
+    retention: 24h
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 5Gi
+
+prometheusOperator:
+  enabled: true
+  tls:
+    enabled: false
+  admissionWebhooks:
+    enabled: false
+
+kubeStateMetrics:
+  enabled: true
+
+nodeExporter:
+  enabled: true

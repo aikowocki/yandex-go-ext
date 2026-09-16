@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gophprofile.fullname" . }}-server
+  labels: {{- include "gophprofile.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount.server }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels:
+      {{- include "gophprofile.selector" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+      labels:
+        {{- include "gophprofile.selector" . | nindent 8 }}
+        app.kubernetes.io/component: server
+    spec:
+      serviceAccountName: {{ include "gophprofile.fullname" . }}
+{{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      containers:
+        - name: server
+          image: {{ include "gophprofile.image" (dict "Values" .Values "component" "server") | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{name: metrics, containerPort: 8080, protocol: TCP}]
+          envFrom:
+            - configMapRef: {name: {{ include "gophprofile.fullname" . }}-config}
+            - secretRef: {name: {{ include "gophprofile.fullname" . }}-secrets}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          startupProbe:
+            httpGet: {path: {{ .Values.probes.startup.path }}, port: metrics}
+            initialDelaySeconds: {{ .Values.probes.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          livenessProbe:
+            httpGet: {path: {{ .Values.probes.liveness.path }}, port: metrics}
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet: {path: {{ .Values.probes.readiness.path }}, port: metrics}
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          lifecycle:
+            preStop:
+              exec: {command: ["/bin/sh", "-c", "sleep 5"]}
+          resources: {{- toYaml .Values.resources.server | nindent 12 }}

@@ -13,3 +13,17 @@ includes:
   quality:
     taskfile: tasks/Taskfile.quality.yaml
     flatten: true
+
+tasks:
+  dev-deploy-local:
+    desc: Локальный деплой - собрать, запушить в Harbor, переразвернуть в k3d
+    vars:
+      GIT_TAG:
+        sh: git describe --always --dirty
+    cmds:
+      - "echo '🔖 Image tag: {{.GIT_TAG}}1'"
+      - "IMAGE_TAG={{.GIT_TAG}}1 task images-build"
+      - task: harbor-login
+      - "IMAGE_TAG={{.GIT_TAG}}1 task harbor-images-push"
+      - "echo '✓ Images pushed to Harbor ({{.GIT_TAG}}), starting k3d deployment...'"
+      - "IMAGE_TAG={{.GIT_TAG}}1 task app-deploy"

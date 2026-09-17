@@ -32,21 +32,21 @@ releases:
     chart: bitnami/postgresql
     version: {{ .Values.postgresqlChartVersion | quote }}
     values:
-      - ../../deployments/k3d/postgresql-values-dev.yaml
+      - ../../deployments/k3d/helm/postgresql-values-dev.yaml
 
   - name: minio
     namespace: gophprofile-deps
     installed: {{ eq .Environment.Name "dev" }}
     chart: ../../deployments/helm/minio
     values:
-      - ../../deployments/k3d/minio-values-dev.yaml
+      - ../../deployments/k3d/helm/minio-values-dev.yaml
 
   - name: kafka
     namespace: gophprofile-deps
     installed: {{ eq .Environment.Name "dev" }}
     chart: ../../deployments/helm/kafka
     values:
-      - ../../deployments/k3d/kafka-values-dev.yaml
+      - ../../deployments/k3d/helm/kafka-values-dev.yaml
 
   - name: loki
     namespace: gophprofile-deps
@@ -64,7 +64,7 @@ releases:
     chart: open-telemetry/opentelemetry-collector
     version: {{ .Values.otelChartVersion | quote }}
     values:
-      - ../../deployments/k3d/otel-values-dev.yaml
+      - ../../deployments/k3d/helm/otel-values-dev.yaml
     needs:
       - gophprofile-deps/loki
       - gophprofile-deps/jaeger
@@ -75,7 +75,7 @@ releases:
     chart: prometheus-community/kube-prometheus-stack
     version: {{ .Values.prometheusStackChartVersion | quote }}
     values:
-      - ../../deployments/k3d/kube-prometheus-stack-values-dev.yaml
+      - ../../deployments/k3d/helm/kube-prometheus-stack-values-dev.yaml
 
   - name: vault
     namespace: vault

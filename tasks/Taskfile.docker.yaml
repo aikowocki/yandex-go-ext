@@ -27,13 +27,45 @@ tasks:
     cmds:
       - docker compose -f {{.COMPOSE_FILE}} stop cronjob-scheduler
 
-  images-build:
-    desc: Собрать application images с Harbor tags
+  images-build-server:
+    internal: false
+    vars:
+      IMAGE_TAG:
+        sh: echo "${IMAGE_TAG:-$(git describe --always --dirty)}"
     cmds:
-      - docker build --no-cache -f deployments/docker/Dockerfile.server -t {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/server:${IMAGE_TAG:-dev} .
-      - docker build --no-cache -f deployments/docker/Dockerfile.worker -t {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/worker:${IMAGE_TAG:-dev} .
-      - docker build --no-cache -f deployments/docker/Dockerfile.cronjob -t {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/cronjob:${IMAGE_TAG:-dev} .
-      - docker build --no-cache -f deployments/docker/Dockerfile.migrate -t {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/migrate:${IMAGE_TAG:-dev} .
+      - docker build -f deployments/docker/Dockerfile --target server -t {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/server:{{.IMAGE_TAG}} .
+
+  images-build-worker:
+    internal: false
+    vars:
+      IMAGE_TAG:
+        sh: echo "${IMAGE_TAG:-$(git describe --always --dirty)}"
+    cmds:
+      - docker build -f deployments/docker/Dockerfile --target worker -t {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/worker:{{.IMAGE_TAG}} .
+
+  images-build-cronjob:
+    internal: false
+    vars:
+      IMAGE_TAG:
+        sh: echo "${IMAGE_TAG:-$(git describe --always --dirty)}"
+    cmds:
+      - docker build -f deployments/docker/Dockerfile --target cronjob -t {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/cronjob:{{.IMAGE_TAG}} .
+
+  images-build-migrate:
+    internal: false
+    vars:
+      IMAGE_TAG:
+        sh: echo "${IMAGE_TAG:-$(git describe --always --dirty)}"
+    cmds:
+      - docker build -f deployments/docker/Dockerfile --target migrate -t {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/migrate:{{.IMAGE_TAG}} .
+
+  images-build:
+    desc: Собрать application images с Harbor tags (параллельно)
+    deps:
+      - images-build-server
+      - images-build-worker
+      - images-build-cronjob
+      - images-build-migrate
 
   harbor-login:
     desc: Авторизовать Docker в Harbor через robot credentials
@@ -52,12 +84,14 @@ tasks:
 
   harbor-images-push:
     desc: Опубликовать application images в Harbor
-    deps: [images-build, harbor-login]
+    vars:
+      IMAGE_TAG:
+        sh: echo "${IMAGE_TAG:-$(git describe --always --dirty)}"
     cmds:
-      - DOCKER_CONFIG="${TMPDIR:-/tmp}/gophprofile-docker-config" docker --config "${TMPDIR:-/tmp}/gophprofile-docker-config" push {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/server:${IMAGE_TAG:-dev}
-      - DOCKER_CONFIG="${TMPDIR:-/tmp}/gophprofile-docker-config" docker --config "${TMPDIR:-/tmp}/gophprofile-docker-config" push {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/worker:${IMAGE_TAG:-dev}
-      - DOCKER_CONFIG="${TMPDIR:-/tmp}/gophprofile-docker-config" docker --config "${TMPDIR:-/tmp}/gophprofile-docker-config" push {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/cronjob:${IMAGE_TAG:-dev}
-      - DOCKER_CONFIG="${TMPDIR:-/tmp}/gophprofile-docker-config" docker --config "${TMPDIR:-/tmp}/gophprofile-docker-config" push {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/migrate:${IMAGE_TAG:-dev}
+      - DOCKER_CONFIG="${TMPDIR:-/tmp}/gophprofile-docker-config" docker --config "${TMPDIR:-/tmp}/gophprofile-docker-config" push {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/server:{{.IMAGE_TAG}}
+      - DOCKER_CONFIG="${TMPDIR:-/tmp}/gophprofile-docker-config" docker --config "${TMPDIR:-/tmp}/gophprofile-docker-config" push {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/worker:{{.IMAGE_TAG}}
+      - DOCKER_CONFIG="${TMPDIR:-/tmp}/gophprofile-docker-config" docker --config "${TMPDIR:-/tmp}/gophprofile-docker-config" push {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/cronjob:{{.IMAGE_TAG}}
+      - DOCKER_CONFIG="${TMPDIR:-/tmp}/gophprofile-docker-config" docker --config "${TMPDIR:-/tmp}/gophprofile-docker-config" push {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/migrate:{{.IMAGE_TAG}}
 
   docker-up:
     desc: Запустить локальную инфраструктуру с пересборкой локальных образов

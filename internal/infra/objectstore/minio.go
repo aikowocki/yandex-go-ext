@@ -65,7 +65,9 @@ func isBucketAlreadyOwned(err error) bool {
 }
 
 func (s *MinIO) execute(ctx context.Context, fn func() error) error {
-	return s.breaker.Do(ctx, func(error) bool { return true }, fn)
+	return s.breaker.Do(ctx, isTransientError, func() error {
+		return withRetry(ctx, fn)
+	})
 }
 
 func (s *MinIO) Upload(ctx context.Context, key string, data io.Reader, size int64, contentType string) (err error) {

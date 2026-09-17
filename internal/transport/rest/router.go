@@ -6,6 +6,7 @@ import (
 	restmiddleware "github.com/aikowocki/yandex-go-ext/internal/transport/rest/middleware"
 	"github.com/labstack/echo/v4"
 	echoMiddleware "github.com/labstack/echo/v4/middleware"
+	echoSwagger "github.com/swaggo/echo-swagger"
 	"golang.org/x/time/rate"
 )
 
@@ -13,9 +14,21 @@ func registerRoutes(e *echo.Echo, cfg config.ServerConfig, handler *avatarHandle
 	ratePerSecond := cfg.RateLimitPerSecond
 	burst := cfg.RateLimitBurst
 
+	// Swagger UI — редирект /docs и /docs/ → /docs/index.html
+	e.GET("/docs", func(c echo.Context) error { return c.Redirect(301, "/docs/index.html") })
+	e.GET("/docs/", func(c echo.Context) error { return c.Redirect(301, "/docs/index.html") })
+	e.GET("/docs/*", echoSwagger.EchoWrapHandler())
+
 	e.GET("/livez", liveResponse)
 	e.GET("/readyz", func(c echo.Context) error { return healthResponse(c, checks) })
 	e.GET("/health", func(c echo.Context) error { return healthResponse(c, checks) })
+
+	// @Summary Метрики Prometheus
+	// @Description Метрики в формате Prometheus для мониторинга (включает application и system метрики)
+	// @Tags метрики
+	// @Produce text/plain
+	// @Success 200 {string} string "Метрики Prometheus"
+	// @Router /metrics [get]
 	e.GET("/metrics", echo.WrapHandler(observability.PrometheusHandler()))
 	e.GET("/", func(c echo.Context) error { return c.File("web/index.html") })
 	e.File("/web/upload", "web/index.html")

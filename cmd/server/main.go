@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 
+	_ "github.com/aikowocki/yandex-go-ext/docs" // register swagger spec
 	"github.com/aikowocki/yandex-go-ext/internal/app"
 )
 

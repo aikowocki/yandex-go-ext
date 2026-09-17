@@ -11,11 +11,30 @@ tasks:
     cmds:
       - mockery
 
+  swag-generate:
+    desc: Перегенерировать Swagger документацию (docs/swagger.json, swagger.yaml, docs.go)
+    cmds:
+      - swag init --generalInfo internal/transport/rest/docs.go --output docs --parseDependency --parseInternal
+
+  diagrams-generate:
+    desc: Перегенерировать PlantUML диаграммы в SVG (требует Docker)
+    cmds:
+      - mkdir -p docs/diagrams/rendered
+      - |
+        docker run --rm \
+          -v "$(pwd):/workspace" -w "/workspace" \
+          plantuml/plantuml:latest -svg \
+          -o /workspace/docs/diagrams/rendered \
+          docs/diagrams/src/*.puml
+      - ls -lh docs/diagrams/rendered/*.svg
+
   generate:
     desc: Прогнать всю кодогенерацию (sqlc, mocks)
     cmds:
       - task: sqlc-generate
       - task: mocks-generate
+      - task: swag-generate
+      - task: diagrams-generate
 
   build:
     desc: Собрать бинарные файлы сервиса

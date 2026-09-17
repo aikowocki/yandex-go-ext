@@ -1,0 +1,77 @@
+@startuml observability
+skinparam linetype ortho
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontSize 12
+skinparam ArrowColor #333333
+
+skinparam component {
+  BackgroundColor #E3F2FD
+  BorderColor #1565C0
+  FontColor #000
+}
+skinparam database {
+  BackgroundColor #E8F5E9
+  BorderColor #2E7D32
+  FontColor #000
+}
+skinparam package {
+  BackgroundColor #F3E5F5
+  BorderColor #7B1FA2
+  FontColor #000
+}
+
+package "Application (gophprofile)" {
+  component "Server Pods" as server
+  component "Worker Pods" as worker
+}
+
+package "Observability Stack (gophprofile-deps)" {
+  component "ServiceMonitor" as sm
+  component "OTEL Collector :4317" as otel
+  component "Jaeger :16686" as jaeger
+  component "Loki :3100" as loki
+  component "Pyroscope :4040\n(optional)" as pyro
+}
+
+package "Monitoring (monitoring)" {
+  database "Prometheus :9090" as prom
+  component "Grafana :3000" as grafana
+}
+
+package "Security Config" {
+  component "ServiceAccount\n(no token automount)" as sa
+  component "Secret\n(DB / S3 / Kafka)" as secret
+  component "ConfigMap" as config
+  component "NetworkPolicy\n(DefaultDeny)" as np
+  component "SecurityContext\n(non-root / ro-fs)" as sc
+}
+
+server --> sm      : /metrics :8080
+worker --> sm      : /metrics :8080
+server --> otel    : OTLP gRPC :4317
+worker --> otel    : OTLP gRPC :4317
+server ..> pyro    : push profiles\n(if enabled)
+worker ..> pyro    : push profiles\n(if enabled)
+
+sm --> prom
+otel --> jaeger    : traces
+otel --> loki      : logs
+otel --> prom      : metrics :8889
+
+prom --> grafana
+jaeger --> grafana
+loki --> grafana
+pyro --> grafana
+
+sa --> server
+sa --> worker
+secret --> server
+secret --> worker
+config --> server
+config --> worker
+np --> server
+np --> worker
+sc --> server
+sc --> worker
+
+@enduml

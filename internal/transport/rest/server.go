@@ -55,7 +55,7 @@ func NewServer(
 	e.HideBanner = true
 	e.Use(otelecho.Middleware("gophprofile-server", otelecho.WithSkipper(func(c echo.Context) bool {
 		path := c.Path()
-		return path == "/health" || path == "/livez" || path == "/readyz" || path == "/metrics"
+		return path == "/health" || path == "/livez" || path == "/readyz" || path == "/metrics" || path == "/docs"
 	})))
 	e.Use(metricsMiddleware())
 	e.Use(restmiddleware.RequestLogger(logger))
@@ -90,11 +90,25 @@ func NewServer(
 	return &Server{logger: logger, echo: e, http: &http.Server{Addr: address, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout, Handler: e}, health: checks}, nil
 }
 
+// @Summary Проверка живого процесса (liveness probe)
+// @Description Проверяет, что HTTP процесс сервера живой. Не проверяет внешние зависимости.
+// @Tags Healthcheck
+// @Produce json
+// @Success 200 {object} map[string]string "Сервер живой"
+// @Router /livez [get]
 // liveResponse сообщает, что HTTP-процесс жив без проверки внешних зависимостей.
 func liveResponse(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// @Summary Проверка готовности (readiness probe)
+// @Description Проверяет, готова ли служба обрабатывать трафик. Включает проверку внешних зависимостей (БД, хранилище, брокер).
+// @Tags Healthcheck
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Служба готова"
+// @Failure 503 {object} map[string]interface{} "Служба не готова (зависимость нездорова)"
+// @Router /readyz [get]
+// @Router /health [get]
 func healthResponse(c echo.Context, checks DependencyChecks) error {
 	ctx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Second)
 	defer cancel()

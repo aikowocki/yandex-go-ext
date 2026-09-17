@@ -3,7 +3,7 @@ imagePullSecrets:
 image:
   registry: localhost:30002/gophprofile
   tag: dev
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 config:
   env: k8s
   logLevel: debug

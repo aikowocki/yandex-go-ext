@@ -13,7 +13,10 @@ command -v curl >/dev/null 2>&1 || { echo "curl требуется" >&2; exit 1;
 command -v jq >/dev/null 2>&1 || { echo "jq требуется" >&2; exit 1; }
 
 if [ -z "${HARBOR_ADMIN_PASSWORD:-}" ]; then
-  [ -t 0 ] || { echo "HARBOR_ADMIN_PASSWORD обязателен для неинтерактивного использования" >&2; exit 1; }
+  if [ ! -t 0 ]; then
+    echo "HARBOR_ADMIN_PASSWORD обязателен для неинтерактивного использования" >&2
+    exit 1
+  fi
   printf 'Пароль администратора Harbor: '
   stty -echo
   trap 'stty echo 2>/dev/null || true; printf "\n"' EXIT INT TERM

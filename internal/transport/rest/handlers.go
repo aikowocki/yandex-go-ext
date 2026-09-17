@@ -24,6 +24,22 @@ type avatarHandler struct {
 	storage    contracts.ObjectStorage
 }
 
+// @Summary Создание нового аватара
+// @Description Загрузка файла изображения для создания нового аватара. Требует multipart/form-data с файлом и опциональными параметрами обрезки.
+// @Tags Аватары
+// @Accept multipart/form-data
+// @Produce json
+// @Param X-User-ID header string true "Идентификатор пользователя (обязателен)"
+// @Param file formData file true "Файл изображения (JPEG, PNG, WebP)"
+// @Param crop_x formData number false "Координата X обрезки (0.0-1.0)"
+// @Param crop_y formData number false "Координата Y обрезки (0.0-1.0)"
+// @Param crop_size formData number false "Размер обрезки (0.0-1.0)"
+// @Success 201 {object} dto.UploadResponse
+// @Failure 400 {object} dto.ErrorResponse "Некорректный ввод или неподдерживаемый формат файла"
+// @Failure 409 {object} dto.ErrorResponse "Аватар уже существует"
+// @Failure 413 {object} dto.ErrorResponse "Файл слишком большой (превышает 10МБ)"
+// @Failure 500 {object} dto.ErrorResponse "Внутренняя ошибка сервера"
+// @Router /api/v1/avatars [post]
 func (h *avatarHandler) createAvatar(c echo.Context) error {
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -40,6 +56,19 @@ func (h *avatarHandler) createAvatar(c echo.Context) error {
 	return c.JSON(http.StatusCreated, dto.UploadFromDomain(avatar))
 }
 
+// @Summary Обновление параметров обрезки аватара
+// @Description Обновляет координаты обрезки существующего аватара. Только владелец может обновлять свой аватар.
+// @Tags Аватары
+// @Accept json
+// @Produce json
+// @Param X-User-ID header string true "Идентификатор пользователя (должен совпадать с владельцем)"
+// @Param id path string true "UUID аватара"
+// @Param body body object true "Параметры обрезки"
+// @Success 200 {object} dto.AvatarResponse
+// @Failure 400 {object} dto.ErrorResponse "Некорректный ввод или отсутствующие параметры"
+// @Failure 403 {object} dto.ErrorResponse "Пользователь не является владельцем аватара"
+// @Failure 404 {object} dto.ErrorResponse "Аватар не найден"
+// @Router /api/v1/avatars/{id}/crop [patch]
 func (h *avatarHandler) updateAvatarCrop(c echo.Context) error {
 	id, err := parseID(c)
 	if err != nil {
@@ -64,6 +93,16 @@ func (h *avatarHandler) updateAvatarCrop(c echo.Context) error {
 	return c.JSON(http.StatusOK, dto.AvatarFromDomain(avatar))
 }
 
+// @Summary Получение списка аватаров пользователя
+// @Description Получает постраничный список всех аватаров конкретного пользователя.
+// @Tags Аватары
+// @Produce json
+// @Param user_id path string true "Идентификатор пользователя"
+// @Param limit query int false "Элементов на странице (1-100, по умолчанию: 20)"
+// @Param offset query int false "Смещение для постраничности (по умолчанию: 0)"
+// @Success 200 {object} dto.ListAvatarsResponse "Список аватаров с информацией о постраничности"
+// @Failure 400 {object} dto.ErrorResponse "Некорректный ввод"
+// @Router /api/v1/users/{user_id}/avatars [get]
 func (h *avatarHandler) listUserAvatars(c echo.Context) error {
 	userID := strings.TrimSpace(c.Param("user_id"))
 	if userID == "" {
@@ -78,9 +117,19 @@ func (h *avatarHandler) listUserAvatars(c echo.Context) error {
 	for _, avatar := range avatars {
 		items = append(items, dto.AvatarFromDomain(avatar))
 	}
-	return c.JSON(http.StatusOK, map[string]any{"items": items, "limit": limit, "offset": offset})
+	return c.JSON(http.StatusOK, dto.ListAvatarsResponse{Items: items, Limit: limit, Offset: offset})
 }
 
+// @Summary Скачивание изображения аватара
+// @Description Скачивает аватар в оригинальном или уменьшенном размере. Возвращает бинарный поток с соответствующим Content-Type.
+// @Tags Аватары
+// @Produce image/jpeg,image/png,image/webp
+// @Param id path string true "UUID аватара"
+// @Param size query string false "Размер изображения: original, 100x100, или 300x300 (по умолчанию: original)"
+// @Success 200 {file} binary "Бинарные данные изображения аватара"
+// @Failure 400 {object} dto.ErrorResponse "Некорректный UUID или параметр размера"
+// @Failure 404 {object} dto.ErrorResponse "Аватар или миниатюра не найдены"
+// @Router /api/v1/avatars/{id} [get]
 func (h *avatarHandler) downloadAvatar(c echo.Context) error {
 	avatar, err := h.getAvatar(c)
 	if err != nil {
@@ -89,6 +138,16 @@ func (h *avatarHandler) downloadAvatar(c echo.Context) error {
 	return h.streamAvatar(c, avatar)
 }
 
+// @Summary Скачивание текущего аватара пользователя
+// @Description Скачивает активный аватар конкретного пользователя. Возвращает бинарный поток изображения.
+// @Tags Аватары
+// @Produce image/jpeg,image/png,image/webp
+// @Param user_id path string true "Идентификатор пользователя"
+// @Param size query string false "Размер изображения: original, 100x100, или 300x300 (по умолчанию: original)"
+// @Success 200 {file} binary "Бинарные данные аватара пользователя"
+// @Failure 400 {object} dto.ErrorResponse "Некорректный ввод"
+// @Failure 404 {object} dto.ErrorResponse "У пользователя нет активного аватара"
+// @Router /api/v1/users/{user_id}/avatar [get]
 func (h *avatarHandler) downloadUserAvatar(c echo.Context) error {
 	userID := strings.TrimSpace(c.Param("user_id"))
 	if userID == "" {
@@ -121,6 +180,15 @@ func (h *avatarHandler) streamAvatar(c echo.Context, avatar *domain.Avatar) erro
 	return c.Stream(http.StatusOK, contentType, object)
 }
 
+// @Summary Получение метаданных аватара
+// @Description Получает метаданные конкретного аватара, включая миниатюры с временными ссылками (действительны 15 минут).
+// @Tags Аватары
+// @Produce json
+// @Param id path string true "UUID аватара"
+// @Success 200 {object} dto.AvatarResponse
+// @Failure 400 {object} dto.ErrorResponse "Некорректный формат UUID"
+// @Failure 404 {object} dto.ErrorResponse "Аватар не найден"
+// @Router /api/v1/avatars/{id}/metadata [get]
 func (h *avatarHandler) metadata(c echo.Context) error {
 	avatar, err := h.getAvatar(c)
 	if err != nil {
@@ -142,6 +210,16 @@ func (h *avatarHandler) metadata(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
+// @Summary Удаление аватара
+// @Description Удаляет конкретный аватар. Только владелец может удалять свой аватар.
+// @Tags Аватары
+// @Param X-User-ID header string true "Идентификатор пользователя (должен совпадать с владельцем)"
+// @Param id path string true "UUID аватара"
+// @Success 204 "Аватар успешно удалён"
+// @Failure 400 {object} dto.ErrorResponse "Некорректный формат UUID"
+// @Failure 403 {object} dto.ErrorResponse "Пользователь не является владельцем аватара"
+// @Failure 404 {object} dto.ErrorResponse "Аватар не найден"
+// @Router /api/v1/avatars/{id} [delete]
 func (h *avatarHandler) deleteAvatar(c echo.Context) error {
 	id, err := parseID(c)
 	if err != nil {
@@ -153,6 +231,16 @@ func (h *avatarHandler) deleteAvatar(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// @Summary Удаление текущего аватара пользователя
+// @Description Удаляет активный аватар пользователя. ID пользователя в пути должен совпадать с заголовком X-User-ID.
+// @Tags Аватары
+// @Param X-User-ID header string true "Идентификатор пользователя (должен совпадать с path user_id)"
+// @Param user_id path string true "Идентификатор пользователя"
+// @Success 204 "Аватар пользователя успешно удалён"
+// @Failure 400 {object} dto.ErrorResponse "Некорректный ввод"
+// @Failure 403 {object} dto.ErrorResponse "Несовпадение ID пользователя или пользователь не владелец"
+// @Failure 404 {object} dto.ErrorResponse "У пользователя нет активного аватара"
+// @Router /api/v1/users/{user_id}/avatar [delete]
 func (h *avatarHandler) deleteUserAvatar(c echo.Context) error {
 	pathUserID := strings.TrimSpace(c.Param("user_id"))
 	requestUserID := restmiddleware.UserID(c)

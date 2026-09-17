@@ -33,15 +33,83 @@ tasks:
       - sh deployments/k3d/create-cluster.sh
       - task: hosts-configure
 
+  k3d-start:
+    desc: Запустить существующий k3d-кластер (после выключения Mac/Docker)
+    cmds:
+      - k3d cluster start ${K3D_CLUSTER_NAME:-gophprofile}
+      - kubectl wait --for=condition=Ready node --all --timeout=60s
+      - task: harbor-recover
+
+  k3d-stop:
+    desc: Остановить k3d-кластер без удаления данных
+    cmds:
+      - k3d cluster stop ${K3D_CLUSTER_NAME:-gophprofile}
+
   k3d-down:
-    desc: Удалить локальный k3d-кластер GophProfile
+    desc: Удалить локальный k3d-кластер GophProfile (полное уничтожение)
     cmds:
       - k3d cluster delete ${K3D_CLUSTER_NAME:-gophprofile}
+
+  harbor-recover:
+    desc: Восстановить Harbor после рестарта k3d ноды (чистит stale postmaster.pid)
+    cmds:
+      - |
+        set -eu
+        echo "Восстановление Harbor после рестарта..."
+
+        # Удаляем stale postmaster.pid если есть
+        if kubectl exec -n harbor statefulset/harbor-database -c database -- \
+            sh -c 'test -f /var/lib/postgresql/data/pgdata/pg18/postmaster.pid' 2>/dev/null; then
+          echo "  Найден stale postmaster.pid — удаляю..."
+          kubectl exec -n harbor statefulset/harbor-database -c database -- \
+            sh -c 'rm -f /var/lib/postgresql/data/pgdata/pg18/postmaster.pid'
+          kubectl delete pod -n harbor -l app=harbor,component=database --wait=false
+        fi
+
+        # Ждём database
+        kubectl rollout status statefulset/harbor-database -n harbor --timeout=3m
+
+        # Рестартуем остальные компоненты чтобы они переподключились к БД
+        kubectl rollout restart \
+          deployment/harbor-core \
+          deployment/harbor-jobservice \
+          deployment/harbor-registry \
+          deployment/harbor-portal \
+          deployment/harbor-nginx \
+          -n harbor
+
+        kubectl rollout status deployment/harbor-core     -n harbor --timeout=3m
+        kubectl rollout status deployment/harbor-registry -n harbor --timeout=3m
+        kubectl rollout status deployment/harbor-nginx    -n harbor --timeout=3m
+        echo "Harbor восстановлен"
 
   harbor-up:
     desc: Установить Harbor в локальный k3d-кластер
     cmds:
       - HARBOR_CHART_VERSION={{.HARBOR_CHART_VERSION}} sh deployments/k3d/install-harbor.sh
+      - task: harbor-db-patch
+
+  harbor-db-patch:
+    desc: Добавить preStop hook для harbor-database (защита от stale postmaster.pid)
+    cmds:
+      - |
+        kubectl patch statefulset harbor-database -n harbor --type='json' -p='[
+          {
+            "op": "add",
+            "path": "/spec/template/spec/containers/0/lifecycle",
+            "value": {
+              "preStop": {
+                "exec": {
+                  "command": ["sh", "-c",
+                    "pg_ctl stop -D /var/lib/postgresql/data/pgdata/pg18 -m fast -w -t 30 2>/dev/null || true"
+                  ]
+                }
+              }
+            }
+          }
+        ]'
+        kubectl rollout status statefulset/harbor-database -n harbor --timeout=3m
+        echo "harbor-database preStop hook применён"
 
   harbor-configure:
     desc: Создать Harbor project и robot account для локальной разработки
@@ -362,8 +430,11 @@ tasks:
   app-deploy:
     desc: Установить application Helm Chart GophProfile в k3d
     deps: [app-image-secret]
+    vars:
+      IMAGE_TAG:
+        sh: echo "${IMAGE_TAG:-$(git describe --always --dirty)}"
     cmds:
-      - helm upgrade --install gophprofile {{.APP_CHART}} --namespace {{.APP_NAMESPACE}} --create-namespace --values {{.APP_CHART}}/values-dev.yaml --set image.tag=${IMAGE_TAG:-dev} --wait=legacy --timeout 10m
+      - helm upgrade --install gophprofile {{.APP_CHART}} --namespace {{.APP_NAMESPACE}} --create-namespace --values {{.APP_CHART}}/values-dev.yaml --set image.tag={{.IMAGE_TAG}} --wait=legacy --timeout 10m
       - kubectl get deploy,svc,ingress,hpa -n {{.APP_NAMESPACE}}
 
   app-migration-logs:

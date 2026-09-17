@@ -1,0 +1,11 @@
+.git
+.gitignore
+.idea
+.DS_Store
+bin
+coverage.out
+coverage-unit.out
+*.log
+.env
+.env.*
+!*.env.example

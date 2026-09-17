@@ -1,0 +1,14 @@
+image:
+  registry: registry.example.com/gophprofile
+  pullPolicy: IfNotPresent
+config:
+  env: prod
+  otelEnabled: "true"
+  otelEnvironment: production
+secrets:
+  externalSecret:
+    enabled: true
+    secretStoreName: vault-backend
+    remoteKey: gophprofile/prod
+ingress:
+  host: gophprofile.example.com

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: jaeger
+description: Jaeger для GophProfile observability
+version: 0.1.0
+appVersion: 2.20.0

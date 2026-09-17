@@ -1,0 +1,66 @@
+version: '3'
+
+tasks:
+  sqlc-generate:
+    desc: Генерирует Go код из SQL-запросов (sqlc.yaml)
+    cmds:
+      - sqlc generate
+
+  mocks-generate:
+    desc: Генерирует моки интерфейсов через mockery (.mockery.yaml)
+    cmds:
+      - mockery
+
+  swag-generate:
+    desc: Перегенерировать Swagger документацию (docs/swagger.json, swagger.yaml, docs.go)
+    cmds:
+      - swag init --generalInfo internal/transport/rest/docs.go --output docs --parseDependency --parseInternal
+
+  diagrams-generate:
+    desc: Перегенерировать PlantUML диаграммы в SVG (требует Docker)
+    cmds:
+      - mkdir -p docs/diagrams/rendered
+      - |
+        docker run --rm \
+          -v "$(pwd):/workspace" -w "/workspace" \
+          plantuml/plantuml:latest -svg \
+          -o /workspace/docs/diagrams/rendered \
+          docs/diagrams/src/*.puml
+      - ls -lh docs/diagrams/rendered/*.svg
+
+  check-alerts:
+    desc: Проверить синтаксис Prometheus alert rules через promtool
+    cmds:
+      - ./scripts/check-alerts.sh
+
+  test-alerts:
+    desc: Запустить unit-тесты для Prometheus alert rules
+    cmds:
+      - |
+        docker run --rm --entrypoint /bin/promtool \
+          -v "$(pwd)/deployments/observability/rules:/etc/prometheus/rules:ro" \
+          prom/prometheus:v3.13.0 \
+          test rules /etc/prometheus/rules/gophprofile-alerts.test.yml
+
+  generate:
+    desc: Прогнать всю кодогенерацию (sqlc, mocks)
+    cmds:
+      - task: sqlc-generate
+      - task: mocks-generate
+      - task: swag-generate
+      - task: diagrams-generate
+
+  build:
+    desc: Собрать бинарные файлы сервиса
+    cmds:
+      - mkdir -p bin
+      - go build -o bin/server ./cmd/server
+      - go build -o bin/worker ./cmd/worker
+      - go build -o bin/seed ./cmd/seed
+      - go build -o bin/cronjob ./cmd/cronjob
+      - go build -o bin/migrate ./cmd/migrate
+
+  migrate:
+    desc: Выполнить миграции базы данных
+    cmds:
+      - go run ./cmd/migrate

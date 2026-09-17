@@ -1,0 +1,9 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: admin-basic-auth
+  labels:
+    app.kubernetes.io/name: admin-access
+spec:
+  basicAuth:
+    secret: admin-basic-auth

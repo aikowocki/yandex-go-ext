@@ -1,0 +1,8 @@
+apiVersion: v2
+name: pyroscope
+description: Pyroscope для непрерывного профилирования GophProfile
+type: application
+version: 0.1.0
+appVersion: "2.3.1"
+maintainers:
+  - name: GophProfile

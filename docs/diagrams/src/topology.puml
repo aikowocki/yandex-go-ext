@@ -1,0 +1,90 @@
+@startuml topology
+skinparam linetype ortho
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontSize 12
+skinparam ArrowColor #333333
+
+skinparam component {
+  BackgroundColor #FFF9C4
+  BorderColor #F57F17
+  FontColor #000
+}
+skinparam database {
+  BackgroundColor #E8F5E9
+  BorderColor #2E7D32
+  FontColor #000
+}
+skinparam package {
+  BackgroundColor #F3E5F5
+  BorderColor #7B1FA2
+  FontColor #000
+}
+
+component "User" as user
+component "Traefik Ingress\n(gophprofile.localhost)" as ingress
+component "Service :8080" as service
+
+package "Server Pods (2-10)" {
+  component "Pod 1" as s1
+  component "Pod 2" as s2
+}
+
+package "Worker Pods (1-10)" {
+  component "Kafka Consumer" as worker
+}
+
+package "Dependencies" {
+  database "PostgreSQL :5432" as db
+  component "MinIO :9000" as s3
+  component "Kafka :9092" as kafka
+  component "OTEL Collector :4317" as otel
+  component "Jaeger :16686" as jaeger
+  component "Loki :3100" as loki
+  component "Pyroscope :4040" as pyro
+}
+
+package "CronJobs" {
+  component "retention\n(02:00 ежедневно)" as cron1
+  component "reconcile\n(03:00 воскресенье)" as cron2
+}
+
+package "Monitoring" {
+  database "Prometheus :9090" as prom
+  component "Grafana :3000" as grafana
+}
+
+user --> ingress
+ingress --> service
+service --> s1
+service --> s2
+
+s1 --> db
+s2 --> db
+s1 --> s3
+s2 --> s3
+s1 --> kafka
+s2 --> kafka
+s1 --> otel
+s2 --> otel
+
+kafka --> worker
+worker --> db
+worker --> s3
+worker --> otel
+
+cron1 --> db
+cron2 --> db
+
+otel --> jaeger
+otel --> loki
+otel --> prom
+prom --> grafana
+jaeger --> grafana
+loki --> grafana
+pyro --> grafana
+
+s1 ..> pyro
+s2 ..> pyro
+worker ..> pyro
+
+@enduml

@@ -1,0 +1,35 @@
+{{- range $name, $schedule := dict "retention" .Values.cron.retention "reconcile" .Values.cron.reconcile }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "gophprofile.fullname" $ }}-{{ $name }}
+  labels: {{- include "gophprofile.labels" $ | nindent 4 }}
+spec:
+  schedule: {{ $schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: {{ $.Values.cron.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ $.Values.cron.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ $.Values.cron.backoffLimit }}
+      activeDeadlineSeconds: {{ $.Values.cron.activeDeadlineSeconds }}
+      template:
+        metadata: {labels: {app.kubernetes.io/name: {{ include "gophprofile.name" $ }}, app.kubernetes.io/component: cronjob}}
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ include "gophprofile.fullname" $ }}
+{{- with $.Values.imagePullSecrets }}
+          imagePullSecrets: {{- toYaml . | nindent 10 }}
+          {{- end }}
+          securityContext: {{- toYaml $.Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: cronjob
+              image: {{ include "gophprofile.image" (dict "Values" $.Values "component" "cronjob") | quote }}
+              args: [{{ $name | quote }}]
+              envFrom:
+                - configMapRef: {name: {{ include "gophprofile.fullname" $ }}-config}
+                - secretRef: {name: {{ include "gophprofile.fullname" $ }}-secrets}
+              securityContext: {{- toYaml $.Values.containerSecurityContext | nindent 16 }}
+              resources: {{- toYaml $.Values.resources.cronjob | nindent 16 }}
+---
+{{- end }}

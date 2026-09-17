@@ -1,0 +1,8 @@
+auth:
+  username: admin
+  htpasswd: 'admin:$2y$05$RDhCgCxhQ3UWyleK6ZtvbeWX53oZWsNXOZBJNzai9J1poX5SucW/K'
+routes:
+  - name: jaeger
+    host: jaeger.gophprofile.localhost
+    service: jaeger
+    port: 16686

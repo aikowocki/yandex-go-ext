@@ -35,6 +35,9 @@ func TestRoutesMatchSpecification(t *testing.T) {
 		"DELETE /api/v1/users/:user_id/avatar": false,
 		"GET /api/v1/users/:user_id/avatars":   false,
 		"GET /health":                          false,
+		"GET /livez":                           false,
+		"GET /readyz":                          false,
+		"GET /metrics":                         false,
 		"GET /web/upload":                      false,
 		"POST /web/upload":                     false,
 		"GET /web/gallery/:user_id":            false,
@@ -53,6 +56,45 @@ func TestRoutesMatchSpecification(t *testing.T) {
 		}
 	}
 }
+func TestAPIRateLimitReturnsTooManyRequests(t *testing.T) {
+	server, err := NewServer(config.ServerConfig{
+		Host:               "127.0.0.1",
+		Port:               8080,
+		MaxUploadSize:      1024,
+		RateLimitPerSecond: 1,
+		RateLimitBurst:     1,
+	}, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := range 2 {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/avatars/00000000-0000-0000-0000-000000000000", nil)
+		req.RemoteAddr = "192.0.2.1:1234"
+		recorder := httptest.NewRecorder()
+		server.echo.ServeHTTP(recorder, req)
+		if i == 1 && recorder.Code != http.StatusTooManyRequests {
+			t.Fatalf("second request status = %d, want %d", recorder.Code, http.StatusTooManyRequests)
+		}
+	}
+}
+
+func TestHTTPErrorHandlerReturnsStableJSONError(t *testing.T) {
+	server, err := NewServer(config.ServerConfig{Host: "127.0.0.1", Port: 8080, MaxUploadSize: 1024, RateLimitPerSecond: 1, RateLimitBurst: 1}, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/does-not-exist", nil)
+	server.echo.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("unknown route status = %d, want %d", recorder.Code, http.StatusNotFound)
+	}
+	if !bytes.Contains(recorder.Body.Bytes(), []byte(`"error"`)) {
+		t.Fatalf("unknown route response = %q, want JSON error", recorder.Body.String())
+	}
+}
+
 func TestServerRunShutsDownOnContextCancellation(t *testing.T) {
 	server, err := NewServer(config.ServerConfig{Host: "127.0.0.1", Port: 0, ReadTimeout: time.Second, WriteTimeout: time.Second, RateLimitPerSecond: 10, RateLimitBurst: 20}, nil, nil, nil, nil)
 	if err != nil {
@@ -362,5 +404,25 @@ func TestAvatarHandlersValidationErrors(t *testing.T) {
 	}
 	if ctx.Response().Status != http.StatusBadRequest {
 		t.Fatalf("invalid user status = %d", ctx.Response().Status)
+	}
+}
+
+func TestMetricsEndpoint(t *testing.T) {
+	server, err := NewServer(config.ServerConfig{Host: "127.0.0.1", Port: 8080, MaxUploadSize: 10 * 1024 * 1024, RateLimitPerSecond: 10, RateLimitBurst: 20}, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	server.echo.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if contentType := recorder.Header().Get("Content-Type"); contentType == "" {
+		t.Fatal("metrics response has no Content-Type")
+	}
+	if recorder.Body.Len() == 0 {
+		t.Fatal("metrics response is empty")
 	}
 }

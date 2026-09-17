@@ -14,15 +14,14 @@
         "name": "service",
         "label": "Service",
         "type": "custom",
-        "query": "gophprofile-server,gophprofile-worker,gophprofile-cronjob",
+        "query": "gophprofile-server,gophprofile-worker",
         "includeAll": true,
         "allValue": ".*",
         "multi": false,
         "current": { "selected": true, "text": "gophprofile-server", "value": "gophprofile-server" },
         "options": [
           { "selected": true, "text": "gophprofile-server", "value": "gophprofile-server" },
-          { "selected": false, "text": "gophprofile-worker", "value": "gophprofile-worker" },
-          { "selected": false, "text": "gophprofile-cronjob", "value": "gophprofile-cronjob" }
+          { "selected": false, "text": "gophprofile-worker", "value": "gophprofile-worker" }
         ]
       }
     ]
@@ -81,7 +80,7 @@
         {
           "refId": "A",
           "labelSelector": "{service_name=\"$service\"}",
-          "profileTypeId": "memory:alloc_objects:count:space:count",
+          "profileTypeId": "memory:alloc_objects:count:space:bytes",
           "queryType": "profile",
           "groupBy": [],
           "spanSelector": []
@@ -115,7 +114,7 @@
         {
           "refId": "A",
           "labelSelector": "{service_name=\"$service\"}",
-          "profileTypeId": "memory:inuse_objects:count:objects:count",
+          "profileTypeId": "memory:inuse_objects:count:space:bytes",
           "queryType": "profile",
           "groupBy": [],
           "spanSelector": []
@@ -157,7 +156,7 @@
         {
           "refId": "A",
           "labelSelector": "{service_name=\"$service\"}",
-          "profileTypeId": "goroutine:goroutine:count:goroutine:count",
+          "profileTypeId": "goroutines:goroutine:count:goroutine:count",
           "queryType": "profile",
           "groupBy": [],
           "spanSelector": []

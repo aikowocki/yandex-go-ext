@@ -1,0 +1,57 @@
+version: '3'
+
+tasks:
+  test:
+    desc: Запустить все тесты с race detector
+    cmds:
+      - go test -race -coverprofile=coverage.out ./...
+
+  test-short:
+    desc: Запустить unit-тесты
+    cmds:
+      - go test -short ./...
+
+  integration:
+    desc: Запустить интеграционные Docker-тесты по явному запросу
+    cmds:
+      - RUN_INTEGRATION=1 go test ./test/integration
+
+  vet:
+    desc: Запустить go vet
+    cmds:
+      - go vet ./...
+
+  lint:
+    desc: Прогнать golangci-lint (включая проверку документации экспортируемых сущностей)
+    cmds:
+      - golangci-lint run ./...
+
+  install-go-test-coverage:
+    desc: Установить go-test-coverage (для проверки порога покрытия, исключая generated-код)
+    cmds:
+      - go install github.com/vladopajic/go-test-coverage/v2@latest
+
+  coverage:
+    desc: Прогнать тесты с покрытием и проверить порог
+    deps: [install-go-test-coverage]
+    cmds:
+      - go test ./... -covermode=atomic -coverpkg=./... -coverprofile=coverage.out
+      - '{{.GOBIN}}/go-test-coverage --config=./.testcoverage.yml'
+    vars:
+      GOBIN:
+        sh: go env GOPATH | xargs -I{} echo {}/bin
+
+  unit-coverage:
+    desc: Проверить покрытие unit-тестами внутренних пакетов без integration и cmd
+    deps: [install-go-test-coverage]
+    cmds:
+      - go test ./internal/... -covermode=atomic -coverpkg=./internal/... -coverprofile=coverage-unit.out
+      - '{{.GOBIN}}/go-test-coverage --config=./.testcoverage-unit.yml'
+    vars:
+      GOBIN:
+        sh: go env GOPATH | xargs -I{} echo {}/bin
+
+  cover:
+    desc: Показать итоговое покрытие и порог
+    cmds:
+      - go-test-coverage --config=./.testcoverage.yml 2>&1 | grep -i "total test coverage\|threshold"

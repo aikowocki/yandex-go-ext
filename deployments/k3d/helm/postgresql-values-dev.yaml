@@ -1,0 +1,23 @@
+fullnameOverride: postgres
+
+architecture: standalone
+auth:
+  enablePostgresUser: true
+  postgresPassword: gophprofile
+  username: gophprofile
+  password: gophprofile
+  database: gophprofile
+
+primary:
+  persistence:
+    enabled: true
+    storageClass: local-path
+    size: 5Gi
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

@@ -15,4 +15,21 @@ spec:
     - port: metrics
       path: /metrics
       interval: {{ .Values.serviceMonitor.interval }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "gophprofile.fullname" . }}-worker
+  labels:
+    {{- include "gophprofile.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}{{- toYaml . | nindent 4 }}{{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "gophprofile.selector" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
 {{- end }}

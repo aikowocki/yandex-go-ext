@@ -598,9 +598,14 @@ tasks:
           PYROSCOPE_ENABLED=true \
           PYROSCOPE_SERVER_ADDRESS="$PYROSCOPE_ADDR" \
           -n {{.APP_NAMESPACE}}
-        kubectl rollout restart deployment/gophprofile-server -n {{.APP_NAMESPACE}}
+        kubectl set env deployment/gophprofile-worker \
+          PYROSCOPE_ENABLED=true \
+          PYROSCOPE_SERVER_ADDRESS="$PYROSCOPE_ADDR" \
+          -n {{.APP_NAMESPACE}}
+        kubectl rollout restart deployment/gophprofile-server deployment/gophprofile-worker -n {{.APP_NAMESPACE}}
         kubectl rollout status deployment/gophprofile-server -n {{.APP_NAMESPACE}} --timeout=2m
-        echo "✓ Pyroscope включен"
+        kubectl rollout status deployment/gophprofile-worker -n {{.APP_NAMESPACE}} --timeout=2m
+        echo "✓ Pyroscope включен (server + worker)"
 
   app-pyroscope-disable:
     desc: Отключить Pyroscope профилирование
@@ -610,9 +615,13 @@ tasks:
         kubectl set env deployment/gophprofile-server \
           PYROSCOPE_ENABLED=false \
           -n {{.APP_NAMESPACE}}
-        kubectl rollout restart deployment/gophprofile-server -n {{.APP_NAMESPACE}}
+        kubectl set env deployment/gophprofile-worker \
+          PYROSCOPE_ENABLED=false \
+          -n {{.APP_NAMESPACE}}
+        kubectl rollout restart deployment/gophprofile-server deployment/gophprofile-worker -n {{.APP_NAMESPACE}}
         kubectl rollout status deployment/gophprofile-server -n {{.APP_NAMESPACE}} --timeout=2m
-        echo "✓ Pyroscope отключен"
+        kubectl rollout status deployment/gophprofile-worker -n {{.APP_NAMESPACE}} --timeout=2m
+        echo "✓ Pyroscope отключен (server + worker)"
 
   app-pyroscope-status:
     desc: Проверить статус Pyroscope в приложении

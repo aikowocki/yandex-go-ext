@@ -15,3 +15,21 @@ spec:
       port: {{ .Values.service.port }}
       targetPort: metrics
       protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gophprofile.fullname" . }}-worker
+  labels:
+    {{- include "gophprofile.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "gophprofile.selector" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+  ports:
+    - name: metrics
+      port: {{ .Values.service.port }}
+      targetPort: metrics
+      protocol: TCP

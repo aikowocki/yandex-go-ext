@@ -18,6 +18,8 @@ spec:
       - name: {{ .Chart.Name }}
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
+        args:
+          - -config.file=/etc/pyroscope/pyroscope.yaml
         ports:
         - name: http
           containerPort: {{ .Values.service.targetPort }}
@@ -32,9 +34,15 @@ spec:
         resources:
           {{- toYaml .Values.resources | nindent 10 }}
         volumeMounts:
+        - name: config
+          mountPath: /etc/pyroscope
+          readOnly: true
         - name: storage
           mountPath: {{ .Values.persistence.mountPath }}
       volumes:
+      - name: config
+        configMap:
+          name: {{ include "pyroscope.fullname" . }}
       - name: storage
         {{- if .Values.persistence.enabled }}
         persistentVolumeClaim:

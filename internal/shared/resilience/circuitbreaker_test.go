@@ -12,8 +12,11 @@ func TestBreakerOpensAfterFailuresAndAllowsProbeAfterReset(t *testing.T) {
 	failure := errors.New("dependency unavailable")
 	call := func() error { return breaker.Do(context.Background(), nil, func() error { return failure }) }
 
-	if !errors.Is(call(), failure) || !errors.Is(call(), failure) {
-		t.Fatal("expected dependency failures")
+	if !errors.Is(call(), failure) {
+		t.Fatal("expected first dependency failure")
+	}
+	if !errors.Is(call(), failure) {
+		t.Fatal("expected second dependency failure")
 	}
 	if !errors.Is(call(), ErrCircuitOpen) {
 		t.Fatal("expected open circuit")

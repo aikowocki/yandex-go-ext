@@ -70,6 +70,7 @@ func (s *MinIO) execute(ctx context.Context, fn func() error) error {
 	})
 }
 
+// Upload загружает объект в S3-хранилище по указанному ключу.
 func (s *MinIO) Upload(ctx context.Context, key string, data io.Reader, size int64, contentType string) (err error) {
 	ctx, span := startStorageSpan(ctx, "upload")
 	defer func() { finishStorageSpan(span, err) }()

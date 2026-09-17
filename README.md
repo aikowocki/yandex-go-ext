@@ -183,7 +183,8 @@ Grafana содержит два дашборда в папке **GophProfile**:
 Traces отправляются в Jaeger через OpenTelemetry Collector (`gophprofile-deps` namespace).  
 Логи агрегируются в Loki и доступны через Grafana → Explore.
 
-Подробная схема observability: [docs/diagrams/src/observability.puml](docs/diagrams/src/observability.puml).
+Подробная схема observability: [docs/diagrams/src/observability.puml](docs/diagrams/src/observability.puml).  
+Полное описание метрик, алертов и интеграций: [docs/monitoring-and-alerts.md](docs/monitoring-and-alerts.md).
 
 ---
 

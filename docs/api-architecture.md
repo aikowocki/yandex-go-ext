@@ -20,7 +20,7 @@ GophProfile REST API построен на базе Echo framework. Каждый
 
 Регистрируется в `NewServer()` (`internal/transport/rest/server.go`):
 
-### 1. OTEL Tracer 🔗
+### 1. OTEL Tracer
 
 **Назначение**: Распределённая трассировка (OpenTelemetry)
 
@@ -47,7 +47,7 @@ POST /api/v1/avatars — 125ms
 
 ---
 
-### 2. Metrics Middleware 📊
+### 2. Metrics Middleware
 
 **Назначение**: Prometheus-метрики для каждого HTTP запроса
 
@@ -60,7 +60,7 @@ POST /api/v1/avatars — 125ms
 
 ---
 
-### 3. Request Logger 📝
+### 3. Request Logger
 
 **Назначение**: Структурированное логирование каждого запроса
 
@@ -83,7 +83,7 @@ logger.Info(ctx, "http request",
 
 ---
 
-### 4. Recover 🛡️
+### 4. Recover
 
 **Назначение**: Перехват panic → HTTP 500
 
@@ -91,7 +91,7 @@ logger.Info(ctx, "http request",
 
 ---
 
-### 5. CORS 🌍
+### 5. CORS
 
 **Назначение**: Cross-Origin Resource Sharing
 
@@ -221,7 +221,7 @@ readinessProbe:
   periodSeconds: 10
 ```
 
-### 📊 Metrics & Docs
+### Metrics & Docs
 
 | Method | Path | Описание |
 |--------|------|---------|

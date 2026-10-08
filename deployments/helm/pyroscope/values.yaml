@@ -1,0 +1,34 @@
+image:
+  repository: grafana/pyroscope
+  tag: "2.3.1"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 4040
+  targetPort: 4040
+
+persistence:
+  enabled: true
+  storageClass: local-path
+  size: 10Gi
+  mountPath: /var/lib/pyroscope
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+config:
+  server:
+    http_listen_port: 4040
+    log_level: info
+  storage:
+    backend: filesystem
+    filesystem:
+      dir: /var/lib/pyroscope

@@ -4,15 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sync"
 
 	"github.com/aikowocki/yandex-go-ext/internal/config"
 	"github.com/grafana/pyroscope-go"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	otellog "go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -48,6 +51,11 @@ func (p *Provider) SetupGlobals() {
 	}
 }
 
+// PrometheusHandler возвращает HTTP handler метрик приложения.
+func PrometheusHandler() http.Handler {
+	return promhttp.Handler()
+}
+
 // New создаёт провайдеры observability для сервиса.
 func New(ctx context.Context, cfg config.ObservabilityConfig, serviceName string) (*Provider, error) {
 
@@ -75,8 +83,15 @@ func New(ctx context.Context, cfg config.ObservabilityConfig, serviceName string
 		_ = exporter.Shutdown(ctx)
 		return nil, fmt.Errorf("create OTLP metric exporter: %w", err)
 	}
+	prometheusExporter, err := otelprom.New()
+	if err != nil {
+		_ = metricExporter.Shutdown(ctx)
+		_ = exporter.Shutdown(ctx)
+		return nil, fmt.Errorf("create Prometheus exporter: %w", err)
+	}
 	logExporter, err := otlploggrpc.New(ctx, logExporterOptions(cfg)...)
 	if err != nil {
+		_ = prometheusExporter.Shutdown(ctx)
 		_ = metricExporter.Shutdown(ctx)
 		_ = exporter.Shutdown(ctx)
 		return nil, fmt.Errorf("create OTLP log exporter: %w", err)
@@ -105,6 +120,7 @@ func New(ctx context.Context, cfg config.ObservabilityConfig, serviceName string
 	)
 	provider.meterProvider = sdkmetric.NewMeterProvider(
 		sdkmetric.WithResource(res),
+		sdkmetric.WithReader(prometheusExporter),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
 	)
 	provider.loggerProvider = sdklog.NewLoggerProvider(
@@ -116,16 +132,24 @@ func New(ctx context.Context, cfg config.ObservabilityConfig, serviceName string
 			_ = provider.Shutdown(ctx)
 			return nil, errors.New("pyroscope server address is empty")
 		}
+		pyroscopeTags := map[string]string{
+			"service_name":     serviceName,
+			"service_version":  cfg.ServiceVersion,
+			"environment_name": cfg.Environment,
+		}
+		if res != nil {
+			for _, attr := range res.Attributes() {
+				key := string(attr.Key)
+				value := attr.Value.AsString()
+				pyroscopeTags[key] = value
+			}
+		}
 		provider.profiler, err = pyroscope.Start(pyroscope.Config{
 			ApplicationName: serviceName,
 			ServerAddress:   cfg.PyroscopeServerAddress,
 			AuthToken:       cfg.PyroscopeAuthToken,
 			Logger:          pyroscope.StandardLogger,
-			Tags: map[string]string{
-				"service.name":                serviceName,
-				"service.version":             cfg.ServiceVersion,
-				"deployment.environment.name": cfg.Environment,
-			},
+			Tags:            pyroscopeTags,
 			ProfileTypes: []pyroscope.ProfileType{
 				pyroscope.ProfileCPU,
 				pyroscope.ProfileAllocObjects,

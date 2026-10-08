@@ -1,0 +1,636 @@
+version: '3'
+
+vars:
+  HARBOR_CHART_VERSION: '1.19.2'
+  PROMETHEUS_STACK_CHART_VERSION: '91.2.3'
+  POSTGRESQL_CHART_VERSION: '18.7.5'
+  MINIO_CHART_VERSION: '17.0.21'
+  KAFKA_CHART_VERSION: '32.4.3'
+  OTEL_CHART_VERSION: '0.173.1'
+  ESO_CHART_VERSION: '0.14.4'
+  VAULT_NAMESPACE: vault
+  ESO_NAMESPACE: external-secrets
+  OBSERVABILITY_NAMESPACE: gophprofile-deps
+  ADMIN_ACCESS_CHART: deployments/helm/admin-access
+  APP_CHART: deployments/helm/gophprofile
+  APP_NAMESPACE: gophprofile
+  HARBOR_REGISTRY: localhost:30002
+  HARBOR_PROJECT: gophprofile
+  HARBOR_CREDENTIALS_FILE: '{{.HOME}}/.config/gophprofile/harbor-robot.env'
+  HELMFILE_FILE: helmfile.yaml.gotmpl
+  HELMFILE_INFRA_FILE: deployments/helmfile/infra.yaml.gotmpl
+  HELMFILE_APP_FILE: deployments/helmfile/app.yaml.gotmpl
+
+tasks:
+  hosts-configure:
+    desc: Добавить GophProfile хосты в /etc/hosts
+    cmds:
+      - sh deployments/k3d/configure-hosts.sh
+
+  k3d-up:
+    desc: Создать локальный k3d-кластер GophProfile
+    cmds:
+      - sh deployments/k3d/create-cluster.sh
+      - task: hosts-configure
+
+  k3d-start:
+    desc: Запустить существующий k3d-кластер (после выключения Mac/Docker)
+    cmds:
+      - k3d cluster start ${K3D_CLUSTER_NAME:-gophprofile}
+      - kubectl wait --for=condition=Ready node --all --timeout=60s
+      - task: harbor-recover
+
+  k3d-stop:
+    desc: Остановить k3d-кластер без удаления данных
+    cmds:
+      - k3d cluster stop ${K3D_CLUSTER_NAME:-gophprofile}
+
+  k3d-down:
+    desc: Удалить локальный k3d-кластер GophProfile (полное уничтожение)
+    cmds:
+      - k3d cluster delete ${K3D_CLUSTER_NAME:-gophprofile}
+
+  harbor-recover:
+    desc: Восстановить Harbor после рестарта k3d ноды (чистит stale postmaster.pid)
+    cmds:
+      - |
+        set -eu
+        echo "Восстановление Harbor после рестарта..."
+
+        # Удаляем stale postmaster.pid если есть
+        if kubectl exec -n harbor statefulset/harbor-database -c database -- \
+            sh -c 'test -f /var/lib/postgresql/data/pgdata/pg18/postmaster.pid' 2>/dev/null; then
+          echo "  Найден stale postmaster.pid — удаляю..."
+          kubectl exec -n harbor statefulset/harbor-database -c database -- \
+            sh -c 'rm -f /var/lib/postgresql/data/pgdata/pg18/postmaster.pid'
+          kubectl delete pod -n harbor -l app=harbor,component=database --wait=false
+        fi
+
+        # Ждём database
+        kubectl rollout status statefulset/harbor-database -n harbor --timeout=3m
+
+        # Рестартуем остальные компоненты чтобы они переподключились к БД
+        kubectl rollout restart \
+          deployment/harbor-core \
+          deployment/harbor-jobservice \
+          deployment/harbor-registry \
+          deployment/harbor-portal \
+          deployment/harbor-nginx \
+          -n harbor
+
+        kubectl rollout status deployment/harbor-core     -n harbor --timeout=3m
+        kubectl rollout status deployment/harbor-registry -n harbor --timeout=3m
+        kubectl rollout status deployment/harbor-nginx    -n harbor --timeout=3m
+        echo "Harbor восстановлен"
+
+  harbor-up:
+    desc: Установить Harbor в локальный k3d-кластер
+    cmds:
+      - HARBOR_CHART_VERSION={{.HARBOR_CHART_VERSION}} sh deployments/k3d/install-harbor.sh
+      - task: harbor-db-patch
+
+  harbor-db-patch:
+    desc: Добавить preStop hook для harbor-database (защита от stale postmaster.pid)
+    cmds:
+      - |
+        kubectl patch statefulset harbor-database -n harbor --type='json' -p='[
+          {
+            "op": "add",
+            "path": "/spec/template/spec/containers/0/lifecycle",
+            "value": {
+              "preStop": {
+                "exec": {
+                  "command": ["sh", "-c",
+                    "pg_ctl stop -D /var/lib/postgresql/data/pgdata/pg18 -m fast -w -t 30 2>/dev/null || true"
+                  ]
+                }
+              }
+            }
+          }
+        ]'
+        kubectl rollout status statefulset/harbor-database -n harbor --timeout=3m
+        echo "harbor-database preStop hook применён"
+
+  harbor-configure:
+    desc: Создать Harbor project и robot account для локальной разработки
+    cmds:
+      - sh deployments/k3d/configure-harbor.sh
+
+  harbor-down:
+    desc: Удалить Harbor
+    cmds:
+      - helm uninstall harbor -n harbor || true
+      - kubectl delete namespace harbor --ignore-not-found
+
+  harbor-restart:
+    desc: Перезапустить компоненты Harbor после сбоя локального k3d node
+    cmds:
+      - kubectl rollout restart statefulset/harbor-redis statefulset/harbor-database -n harbor
+      - kubectl rollout restart deployment/harbor-registry deployment/harbor-core deployment/harbor-jobservice deployment/harbor-nginx -n harbor
+      - kubectl rollout status statefulset/harbor-redis -n harbor --timeout=5m
+      - kubectl rollout status statefulset/harbor-database -n harbor --timeout=5m
+      - kubectl rollout status deployment/harbor-registry -n harbor --timeout=5m
+      - kubectl rollout status deployment/harbor-core -n harbor --timeout=5m
+      - kubectl rollout status deployment/harbor-jobservice -n harbor --timeout=5m
+      - kubectl rollout status deployment/harbor-nginx -n harbor --timeout=5m
+
+  helmfile-infra-template-dev:
+    desc: Отрендерить infrastructure Helmfile для dev без применения
+    cmds:
+      - helmfile --skip-deps --file {{.HELMFILE_INFRA_FILE}} --environment dev template > /tmp/gophprofile-helmfile-infra-dev-rendered.yaml
+
+  helmfile-infra-template-prod:
+    desc: Отрендерить infrastructure Helmfile для prod без применения
+    cmds:
+      - helmfile --skip-deps --file {{.HELMFILE_INFRA_FILE}} --environment prod template > /tmp/gophprofile-helmfile-infra-prod-rendered.yaml
+
+  helmfile-app-template-dev:
+    desc: Отрендерить application Helmfile для dev без применения
+    cmds:
+      - helmfile --skip-deps --file {{.HELMFILE_APP_FILE}} --environment dev template > /tmp/gophprofile-helmfile-app-dev-rendered.yaml
+
+  helmfile-app-template-prod:
+    desc: Отрендерить application Helmfile для prod без применения
+    cmds:
+      - helmfile --skip-deps --file {{.HELMFILE_APP_FILE}} --environment prod template > /tmp/gophprofile-helmfile-app-prod-rendered.yaml
+
+  helmfile-template-dev:
+    desc: Отрендерить aggregate Helmfile dev без применения
+    cmds:
+      - helmfile --skip-deps --file {{.HELMFILE_FILE}} --environment dev template > /tmp/gophprofile-helmfile-dev-rendered.yaml
+
+  helmfile-template-prod:
+    desc: Отрендерить aggregate Helmfile prod без применения
+    cmds:
+      - helmfile --skip-deps --file {{.HELMFILE_FILE}} --environment prod template > /tmp/gophprofile-helmfile-prod-rendered.yaml
+
+  helmfile-infra-sync-dev:
+    desc: Синхронизировать только external infrastructure dev releases
+    cmds:
+      - helmfile --skip-deps --file {{.HELMFILE_INFRA_FILE}} --environment dev sync --wait
+
+  helmfile-infra-sync-prod:
+    desc: Синхронизировать external infrastructure prod releases
+    cmds:
+      - helmfile --skip-deps --file {{.HELMFILE_INFRA_FILE}} --environment prod sync --wait
+
+  helmfile-app-sync-dev:
+    desc: Синхронизировать только GophProfile Helm app в dev
+    cmds:
+      - helmfile --skip-deps --file {{.HELMFILE_APP_FILE}} --environment dev sync --wait
+
+  helmfile-app-sync-prod:
+    desc: Синхронизировать только GophProfile Helm app в prod
+    cmds:
+      - helmfile --skip-deps --file {{.HELMFILE_APP_FILE}} --environment prod sync --wait
+
+  helmfile-sync-dev:
+    desc: Синхронизировать aggregate dev stack через Helmfile
+    cmds:
+      - helmfile --skip-deps --file {{.HELMFILE_FILE}} --environment dev sync --wait
+
+  helmfile-sync-prod:
+    desc: Синхронизировать aggregate prod stack через Helmfile
+    cmds:
+      - helmfile --skip-deps --file {{.HELMFILE_FILE}} --environment prod sync --wait
+
+  helmfile-destroy-dev:
+    desc: Удалить aggregate Helmfile dev releases
+    cmds:
+      - helmfile --skip-deps --file {{.HELMFILE_FILE}} --environment dev destroy
+
+  admin-access-up:
+    desc: Опубликовать dev admin services через Traefik BasicAuth admin/admin
+    cmds:
+      - helm upgrade --install monitoring-admin-access {{.ADMIN_ACCESS_CHART}} --namespace monitoring --values {{.ADMIN_ACCESS_CHART}}/values-monitoring.yaml --wait --timeout 5m
+      - helm upgrade --install jaeger-admin-access {{.ADMIN_ACCESS_CHART}} --namespace {{.OBSERVABILITY_NAMESPACE}} --values {{.ADMIN_ACCESS_CHART}}/values-jaeger.yaml --wait --timeout 5m
+      - helm upgrade --install vault-admin-access {{.ADMIN_ACCESS_CHART}} --namespace {{.VAULT_NAMESPACE}} --values {{.ADMIN_ACCESS_CHART}}/values-vault.yaml --wait --timeout 5m
+      - kubectl get ingress -A -l app.kubernetes.io/name=admin-access
+
+  admin-access-down:
+    desc: Удалить dev admin access routes
+    cmds:
+      - helm uninstall vault-admin-access -n {{.VAULT_NAMESPACE}} || true
+      - helm uninstall jaeger-admin-access -n {{.OBSERVABILITY_NAMESPACE}} || true
+      - helm uninstall monitoring-admin-access -n monitoring || true
+
+  admin-access-template:
+    desc: Отрендерить dev admin access routes
+    cmds:
+      - helm template monitoring-admin-access {{.ADMIN_ACCESS_CHART}} --namespace monitoring --values {{.ADMIN_ACCESS_CHART}}/values-monitoring.yaml > /tmp/gophprofile-admin-monitoring-rendered.yaml
+      - helm template jaeger-admin-access {{.ADMIN_ACCESS_CHART}} --namespace {{.OBSERVABILITY_NAMESPACE}} --values {{.ADMIN_ACCESS_CHART}}/values-jaeger.yaml > /tmp/gophprofile-admin-jaeger-rendered.yaml
+      - helm template vault-admin-access {{.ADMIN_ACCESS_CHART}} --namespace {{.VAULT_NAMESPACE}} --values {{.ADMIN_ACCESS_CHART}}/values-vault.yaml > /tmp/gophprofile-admin-vault-rendered.yaml
+
+  dependencies-up:
+    desc: Установить PostgreSQL, MinIO, Kafka в k3d
+    cmds:
+      - helm repo add bitnami https://charts.bitnami.com/bitnami
+      - helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+      - helm upgrade --install postgres bitnami/postgresql --version {{.POSTGRESQL_CHART_VERSION}} --namespace gophprofile-deps --create-namespace --values deployments/k3d/helm/postgresql-values-dev.yaml --wait --timeout 10m
+      - helm upgrade --install minio deployments/helm/minio --namespace gophprofile-deps --values deployments/k3d/helm/minio-values-dev.yaml --wait --timeout 10m
+      - helm upgrade --install kafka deployments/helm/kafka --namespace gophprofile-deps --values deployments/k3d/helm/kafka-values-dev.yaml --wait --timeout 15m
+      - kubectl get pods -n gophprofile-deps
+
+  otel-up:
+    desc: Установить OTEL Collector (требует kube-prometheus CRDs)
+    deps: [monitoring-up]
+    cmds:
+      - helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+      - helm upgrade --install otel-collector open-telemetry/opentelemetry-collector --version {{.OTEL_CHART_VERSION}} --namespace gophprofile-deps --values deployments/k3d/helm/otel-values-dev.yaml --wait --timeout 10m
+      - kubectl get pods -n gophprofile-deps | grep otel-collector
+
+  dependencies-down:
+    desc: Удалить локальные PostgreSQL, MinIO, Kafka и OTEL Collector
+    cmds:
+      - helm uninstall otel-collector kafka minio postgres -n gophprofile-deps || true
+      - kubectl delete namespace gophprofile-deps --ignore-not-found
+
+  secrets-vault-reset:
+    desc: Сбросить только dev Vault PVC и переинициализировать его
+    cmds:
+      - kubectl scale statefulset/vault -n {{.VAULT_NAMESPACE}} --replicas=0
+      - kubectl wait --for=delete pod/vault-0 -n {{.VAULT_NAMESPACE}} --timeout=120s
+      - kubectl delete pvc data-vault-0 -n {{.VAULT_NAMESPACE}} --ignore-not-found --wait=true
+      - kubectl scale statefulset/vault -n {{.VAULT_NAMESPACE}} --replicas=1
+      - kubectl wait --for=jsonpath='{.status.readyReplicas}'=1 statefulset/vault -n {{.VAULT_NAMESPACE}} --timeout=180s
+
+  secrets-vault-restart:
+    desc: Перезапустить persistent Vault Pod без удаления PVC
+    cmds:
+      - kubectl delete pod vault-0 -n {{.VAULT_NAMESPACE}} --ignore-not-found
+      - kubectl wait --for=jsonpath='{.status.readyReplicas}'=1 statefulset/vault -n {{.VAULT_NAMESPACE}} --timeout=180s
+
+  secrets-up:
+    desc: Установить persistent dev Vault и External Secrets Operator
+    cmds:
+      - helm upgrade --install vault deployments/helm/vault --namespace {{.VAULT_NAMESPACE}} --create-namespace --wait --timeout 10m
+      - helm repo add external-secrets https://charts.external-secrets.io
+      - helm repo update external-secrets
+      - helm upgrade --install external-secrets external-secrets/external-secrets --version {{.ESO_CHART_VERSION}} --namespace {{.ESO_NAMESPACE}} --create-namespace --set installCRDs=true --wait --timeout 10m
+      - kubectl wait --for=jsonpath='{.status.readyReplicas}'=1 statefulset/vault -n {{.VAULT_NAMESPACE}} --timeout=180s
+      - kubectl wait --for=condition=Available deployment/external-secrets -n {{.ESO_NAMESPACE}} --timeout=180s
+      - task: secrets-configure
+
+  secrets-configure:
+    desc: Инициализировать/unseal Vault и настроить KV/Kubernetes Auth
+    cmds:
+      - |
+        set -eu
+        vault_exec='kubectl exec -n {{.VAULT_NAMESPACE}} statefulset/vault --'
+        if ! kubectl get secret vault-init -n {{.VAULT_NAMESPACE}} >/dev/null 2>&1; then
+          init_json="$($vault_exec vault operator init -key-shares=1 -key-threshold=1 -format=json)"
+          unseal_key="$(printf '%s' "$init_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["unseal_keys_b64"][0])')"
+          root_token="$(printf '%s' "$init_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["root_token"])')"
+          test -n "$unseal_key"
+          test -n "$root_token"
+          kubectl create secret generic vault-init --namespace {{.VAULT_NAMESPACE}} --from-literal=unseal-key="$unseal_key" --from-literal=root-token="$root_token" --dry-run=client -o yaml | kubectl apply -f -
+        else
+          unseal_key="$(kubectl get secret vault-init -n {{.VAULT_NAMESPACE}} -o jsonpath='{.data.unseal-key}' | base64 --decode)"
+          root_token="$(kubectl get secret vault-init -n {{.VAULT_NAMESPACE}} -o jsonpath='{.data.root-token}' | base64 --decode)"
+        fi
+        status_json="$($vault_exec vault status -format=json 2>/dev/null || true)"
+        if printf '%s' "$status_json" | grep -Eq '"sealed"[[:space:]]*:[[:space:]]*true'; then
+          $vault_exec vault operator unseal "$unseal_key" >/dev/null
+        fi
+        $vault_exec env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" sh -ec '
+          vault secrets enable -path=secret kv-v2 2>/dev/null || true
+          vault kv put secret/gophprofile/dev \
+            DATABASE_URL="postgres://gophprofile:gophprofile@postgres.gophprofile-deps.svc.cluster.local:5432/gophprofile?sslmode=disable" \
+            S3_ENDPOINT="minio.gophprofile-deps.svc.cluster.local:9000" \
+            S3_ACCESS_KEY_ID="minioadmin" \
+            S3_SECRET_ACCESS_KEY="minioadmin" \
+            KAFKA_BROKERS="kafka.gophprofile-deps.svc.cluster.local:9092" \
+            OTEL_EXPORTER_OTLP_ENDPOINT="http://otel-collector.gophprofile-deps.svc.cluster.local:4317" \
+            PYROSCOPE_SERVER_ADDRESS="" \
+            PYROSCOPE_AUTH_TOKEN=""
+          vault policy write gophprofile - <<"EOF"
+        path "secret/data/gophprofile/*" {
+          capabilities = ["read"]
+        }
+        EOF
+          vault auth enable kubernetes 2>/dev/null || true
+          vault write auth/kubernetes/config \
+            kubernetes_host="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT_HTTPS}" \
+            kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
+            token_reviewer_jwt="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
+          vault write auth/kubernetes/role/gophprofile \
+            bound_service_account_names=gophprofile,external-secrets \
+            bound_service_account_namespaces=gophprofile,external-secrets \
+            audience="https://kubernetes.default.svc.cluster.local" \
+            policies=gophprofile ttl=1h
+        '
+        kubectl delete secret vault-gophprofile-token --namespace {{.APP_NAMESPACE}} --ignore-not-found
+
+  secrets-persistence-test:
+    desc: Проверить сохранность Vault KV после рестарта Pod
+    cmds:
+      - |
+        set -eu
+        marker="$(date +%s)"
+        root_token="$(kubectl get secret vault-init -n {{.VAULT_NAMESPACE}} -o jsonpath='{.data.root-token}' | base64 --decode)"
+        kubectl exec -n {{.VAULT_NAMESPACE}} statefulset/vault -- env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" vault kv put secret/gophprofile/persistence-test marker="$marker"
+        task secrets-vault-restart
+        task secrets-configure
+        actual="$(kubectl exec -n {{.VAULT_NAMESPACE}} statefulset/vault -- env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" vault kv get -field=marker secret/gophprofile/persistence-test)"
+        test "$actual" = "$marker"
+        echo "Vault persistence check passed: marker=$actual"
+
+  secrets-refresh:
+    desc: Принудительно пересинхронизировать Vault SecretStore и ExternalSecret
+    cmds:
+      - kubectl annotate secretstore vault-backend -n {{.APP_NAMESPACE}} force-sync="$(date +%s)" --overwrite
+      - kubectl annotate externalsecret gophprofile-secrets -n {{.APP_NAMESPACE}} force-sync="$(date +%s)" --overwrite
+
+  secrets-status:
+    desc: Проверить Vault, SecretStore и ExternalSecret sync status
+    cmds:
+      - kubectl get pods -n {{.VAULT_NAMESPACE}}
+      - kubectl get pods -n {{.ESO_NAMESPACE}}
+      - kubectl get secretstore,externalsecret -n {{.APP_NAMESPACE}}
+      - kubectl get secret gophprofile-secrets -n {{.APP_NAMESPACE}}
+
+  secrets-vault-token:
+    desc: Скопировать root token для Vault UI в буфер обмена
+    cmds:
+      - |
+        TOKEN=$(kubectl get secret vault-init -n {{.VAULT_NAMESPACE}} -o jsonpath='{.data.root-token}' | base64 -d)
+        {{if eq OS "darwin"}}
+        echo "$TOKEN" | pbcopy && echo "✓ Token скопирован в буфер обмена (macOS)"
+        {{else if eq OS "linux"}}
+        echo "$TOKEN" | xclip -selection clipboard && echo "✓ Token скопирован в буфер обмена (Linux)"
+        {{else if eq OS "windows"}}
+        echo "$TOKEN" | clip && echo "✓ Token скопирован в буфер обмена (Windows)"
+        {{else}}
+        echo "✗ Unsupported OS: {{OS}}" && exit 1
+        {{end}}
+
+  secrets-down:
+    desc: Удалить dev Vault и External Secrets Operator
+    cmds:
+      - helm uninstall external-secrets -n {{.ESO_NAMESPACE}} || true
+      - kubectl delete namespace {{.ESO_NAMESPACE}} --ignore-not-found
+      - helm uninstall vault -n {{.VAULT_NAMESPACE}} || true
+      - kubectl delete namespace {{.VAULT_NAMESPACE}} --ignore-not-found
+
+  observability-up:
+    desc: Установить Loki и Jaeger для локальной observability в k3d
+    deps: [monitoring-up]
+    cmds:
+      - helm upgrade --install loki deployments/helm/loki --namespace {{.OBSERVABILITY_NAMESPACE}} --create-namespace --wait --timeout 10m
+      - helm upgrade --install jaeger deployments/helm/jaeger --namespace {{.OBSERVABILITY_NAMESPACE}} --create-namespace --wait --timeout 10m
+      - kubectl get pods,svc -n {{.OBSERVABILITY_NAMESPACE}} -l 'app.kubernetes.io/name in (loki,jaeger)'
+
+  observability-down:
+    desc: Удалить Loki и Jaeger из локального k3d observability
+    cmds:
+      - helm uninstall jaeger loki -n {{.OBSERVABILITY_NAMESPACE}} || true
+
+  observability-template:
+    desc: Отрендерить Loki и Jaeger charts
+    cmds:
+      - helm template loki deployments/helm/loki --namespace {{.OBSERVABILITY_NAMESPACE}} > /tmp/gophprofile-loki-rendered.yaml
+      - helm template jaeger deployments/helm/jaeger --namespace {{.OBSERVABILITY_NAMESPACE}} > /tmp/gophprofile-jaeger-rendered.yaml
+
+  dependencies-template:
+    desc: Отрендерить локальные dependency Helm charts
+    cmds:
+      - helm template postgres bitnami/postgresql --version {{.POSTGRESQL_CHART_VERSION}} --namespace gophprofile-deps --values deployments/k3d/helm/postgresql-values-dev.yaml > /tmp/gophprofile-postgresql-rendered.yaml
+      - helm template minio deployments/helm/minio --namespace gophprofile-deps --values deployments/k3d/helm/minio-values-dev.yaml > /tmp/gophprofile-minio-rendered.yaml
+      - helm template kafka deployments/helm/kafka --namespace gophprofile-deps --values deployments/k3d/helm/kafka-values-dev.yaml > /tmp/gophprofile-kafka-rendered.yaml
+      - helm template otel-collector open-telemetry/opentelemetry-collector --version {{.OTEL_CHART_VERSION}} --namespace gophprofile-deps --values deployments/k3d/helm/otel-values-dev.yaml > /tmp/gophprofile-otel-rendered.yaml
+
+  app-template:
+    desc: Отрендерить application Helm Chart GophProfile для dev
+    cmds:
+      - helm template gophprofile {{.APP_CHART}} --namespace {{.APP_NAMESPACE}} --values {{.APP_CHART}}/values-dev.yaml > /tmp/gophprofile-app-rendered.yaml
+
+  app-lint:
+    desc: Проверить application Helm Chart GophProfile
+    cmds:
+      - helm lint {{.APP_CHART}} --values {{.APP_CHART}}/values-dev.yaml
+
+  app-image-secret:
+    desc: Создать Kubernetes imagePullSecret для Harbor
+    cmds:
+      - |
+        set -eu
+        credentials="{{.HARBOR_CREDENTIALS_FILE}}"
+        test -f "$credentials"
+        registry="$(awk -F= '$1 == "HARBOR_REGISTRY" {sub(/^[^=]*=/, ""); print; exit}' "$credentials")"
+        username="$(awk -F= '$1 == "HARBOR_ROBOT_USERNAME" {sub(/^[^=]*=/, ""); print; exit}' "$credentials")"
+        secret="$(awk -F= '$1 == "HARBOR_ROBOT_SECRET" {sub(/^[^=]*=/, ""); print; exit}' "$credentials")"
+        kubectl create namespace {{.APP_NAMESPACE}} --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create secret docker-registry harbor-registry --namespace {{.APP_NAMESPACE}} --docker-server="$registry" --docker-username="$username" --docker-password="$secret" --dry-run=client -o yaml | kubectl apply -f -
+
+  app-recover:
+    desc: Восстановить release после прерванного Helm upgrade
+    cmds:
+      - helm rollback gophprofile ${APP_ROLLBACK_REVISION:-6} -n {{.APP_NAMESPACE}} --no-hooks --force-conflicts --wait --timeout 2m
+
+  app-deploy:
+    desc: Установить application Helm Chart GophProfile в k3d
+    deps: [app-image-secret]
+    vars:
+      IMAGE_TAG:
+        sh: echo "${IMAGE_TAG:-$(git describe --always --dirty)}"
+    cmds:
+      - helm upgrade --install gophprofile {{.APP_CHART}} --namespace {{.APP_NAMESPACE}} --create-namespace --values {{.APP_CHART}}/values-dev.yaml --set image.tag={{.IMAGE_TAG}} --wait=legacy --timeout 10m
+      - kubectl get deploy,svc,ingress,hpa -n {{.APP_NAMESPACE}}
+
+  app-migration-logs:
+    desc: Показать логи и детали выполнения migration Job
+    cmds:
+      - kubectl wait --for=condition=complete job/gophprofile-migrate -n {{.APP_NAMESPACE}} --timeout=120s
+      - kubectl get job/gophprofile-migrate -n {{.APP_NAMESPACE}} -o jsonpath='succeeded={.status.succeeded} failed={.status.failed} start={.status.startTime} completion={.status.completionTime}{"\\n"}'
+      - kubectl logs job/gophprofile-migrate -n {{.APP_NAMESPACE}} --all-containers=true
+
+  app-migration-status:
+    desc: Проверить результат миграций (успех/ошибка)
+    silent: true
+    cmds:
+      - |
+        set -eu
+        kubectl wait --for=condition=complete job/gophprofile-migrate -n {{.APP_NAMESPACE}} --timeout=120s
+        SUCCEEDED=$(kubectl get job/gophprofile-migrate -n {{.APP_NAMESPACE}} -o jsonpath='{.status.succeeded}')
+        FAILED=$(kubectl get job/gophprofile-migrate -n {{.APP_NAMESPACE}} -o jsonpath='{.status.failed}')
+        
+        if [ "$SUCCEEDED" = "1" ] && ([ -z "$FAILED" ] || [ "$FAILED" = "0" ]); then
+          echo "✅ Migrations successful"
+          exit 0
+        else
+          echo "❌ Migrations failed (succeeded=$SUCCEEDED failed=$FAILED)"
+          exit 1
+        fi
+
+  app-down:
+    desc: Удалить application Helm release
+    cmds:
+      - helm uninstall gophprofile -n {{.APP_NAMESPACE}} || true
+      - kubectl delete namespace {{.APP_NAMESPACE}} --ignore-not-found
+
+  monitoring-dashboard-up:
+    desc: Загрузить GophProfile dashboard и организовать Kubernetes dashboards в папку
+    cmds:
+      - kubectl create configmap gophprofile-service-overview --namespace monitoring --from-file=service-overview.json=deployments/observability/grafana/provisioning/dashboards/service-overview.json --dry-run=client -o yaml | kubectl label --local -f - grafana_dashboard=1 -o yaml | kubectl annotate --local -f - grafana_folder=GophProfile -o yaml | kubectl apply -f -
+      - kubectl create configmap pyroscope-overview --namespace monitoring --from-file=pyroscope-overview.json=deployments/observability/grafana/provisioning/dashboards/pyroscope-overview.json --dry-run=client -o yaml | kubectl label --local -f - grafana_dashboard=1 -o yaml | kubectl annotate --local -f - grafana_folder=GophProfile -o yaml | kubectl apply -f -
+      - |
+        kubectl patch configmap -n monitoring -l grafana_dashboard=1 --type merge -p '{"metadata":{"annotations":{"grafana_folder":"Kubernetes"}}}' 2>/dev/null || true
+        kubectl get configmap -n monitoring -l grafana_dashboard=1 -o name | while read cm; do 
+          if ! kubectl get "$cm" -n monitoring -o jsonpath='{.metadata.annotations.grafana_folder}' | grep -q GophProfile; then 
+            kubectl annotate "$cm" -n monitoring grafana_folder=Kubernetes --overwrite 2>/dev/null || true
+          fi
+        done
+
+  monitoring-dashboard-refresh:
+    desc: Обновить provisioned dashboard ConfigMap (sidecar перечитает автоматически)
+    cmds:
+      - task: monitoring-dashboard-up
+      - kubectl rollout status deployment/kube-prometheus-grafana -n monitoring --timeout=180s
+
+  monitoring-dashboard-down:
+    desc: Удалить GophProfile dashboard ConfigMap
+    cmds:
+      - kubectl delete configmap gophprofile-service-overview -n monitoring --ignore-not-found
+
+  monitoring-up:
+    desc: Установить kube-prometheus-stack в локальный k3d-кластер
+    cmds:
+      - helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+      - helm repo update prometheus-community
+      - helm upgrade --install kube-prometheus prometheus-community/kube-prometheus-stack --version {{.PROMETHEUS_STACK_CHART_VERSION}} --namespace monitoring --create-namespace --values deployments/k3d/helm/kube-prometheus-stack-values-dev.yaml --wait --timeout 10m
+      - task: monitoring-dashboard-up
+      - kubectl wait --for=condition=Available deployment --all -n monitoring --timeout=180s
+      - kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=prometheus -n monitoring --timeout=180s
+      - kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=alertmanager -n monitoring --timeout=180s
+      - kubectl get pods -n monitoring
+
+  monitoring-down:
+    desc: Удалить kube-prometheus-stack из локального k3d-кластера
+    cmds:
+      - helm uninstall kube-prometheus -n monitoring || true
+      - kubectl delete namespace monitoring --ignore-not-found
+
+  monitoring-template:
+    desc: Отрендерить kube-prometheus-stack values
+    cmds:
+      - helm template kube-prometheus prometheus-community/kube-prometheus-stack --version {{.PROMETHEUS_STACK_CHART_VERSION}} --namespace monitoring --values deployments/k3d/helm/kube-prometheus-stack-values-dev.yaml > /tmp/gophprofile-kube-prometheus-rendered.yaml
+
+  networkpolicy-test:
+    desc: Проверить, что запрещённый namespace не может войти в GophProfile
+    cmds:
+      - |
+        set -u
+        test_namespace="gophprofile-netpol-test"
+        test_pod="gophprofile-netpol-client"
+        kubectl create namespace "$test_namespace" --dry-run=client -o yaml | kubectl apply -f -
+        set +e
+        kubectl run "$test_pod" --namespace "$test_namespace" --image=curlimages/curl:8.10.1 --restart=Never --rm --attach --quiet --command -- sh -c 'curl --connect-timeout 3 --max-time 5 --fail http://gophprofile.gophprofile.svc.cluster.local:8080/livez'
+        status=$?
+        set -e
+        kubectl delete namespace "$test_namespace" --ignore-not-found --wait=true
+        if [ "$status" -eq 0 ]; then
+          echo "NetworkPolicy check failed: forbidden ingress was allowed"
+          exit 1
+        fi
+        echo "NetworkPolicy check passed: forbidden ingress was blocked"
+
+  harbor-template:
+    desc: Отрендерить локальный Harbor Helm chart
+    cmds:
+      - helm template harbor harbor/harbor --version {{.HARBOR_CHART_VERSION}} --namespace harbor -f deployments/k3d/helm/harbor-values-dev.yaml > /tmp/gophprofile-harbor-rendered.yaml
+
+  pyroscope-up:
+    desc: Установить Pyroscope server в k3d для профилирования
+    cmds:
+      - helm upgrade --install pyroscope deployments/helm/pyroscope --namespace {{.OBSERVABILITY_NAMESPACE}} --create-namespace --values deployments/helm/pyroscope/values.yaml --wait --timeout 10m
+      - kubectl get pods -n {{.OBSERVABILITY_NAMESPACE}} | grep pyroscope
+      - 'echo "Pyroscope доступен по адресу: http://pyroscope.{{.OBSERVABILITY_NAMESPACE}}.svc.cluster.local:4040"'
+
+  pyroscope-down:
+    desc: Удалить Pyroscope server
+    cmds:
+      - helm uninstall pyroscope -n {{.OBSERVABILITY_NAMESPACE}} || true
+
+  pyroscope-template:
+    desc: Отрендерить Pyroscope Helm chart
+    cmds:
+      - helm template pyroscope deployments/helm/pyroscope --namespace {{.OBSERVABILITY_NAMESPACE}} --values deployments/helm/pyroscope/values.yaml > /tmp/gophprofile-pyroscope-rendered.yaml
+
+  harbor-ui-info:
+    desc: Показать информацию для доступа к Harbor UI
+    cmds:
+      - |
+        echo "=== Harbor UI Info ==="
+        echo "URL: http://localhost:30002"
+        echo "Project: {{.HARBOR_PROJECT}}"
+        if [ -f {{.HARBOR_CREDENTIALS_FILE}} ]; then
+          echo ""
+          echo "Credentials from {{.HARBOR_CREDENTIALS_FILE}}:"
+          grep -E "HARBOR_(REGISTRY|ROBOT_USERNAME|ROBOT_SECRET)" {{.HARBOR_CREDENTIALS_FILE}} || echo "(file не содержит переменные)"
+        fi
+
+  minio-console-info:
+    desc: Показать информацию для доступа к MinIO Console
+    cmds:
+      - |
+        echo "=== MinIO Console Info ==="
+        echo "URL: http://localhost:9001"
+        echo "Access Key: minioadmin"
+        echo "Secret Key: minioadmin"
+        echo "API Endpoint: http://minio.gophprofile-deps.svc.cluster.local:9000"
+
+  grafana-restart:
+    desc: Принудительно перезагрузить Grafana Pod
+    cmds:
+      - kubectl rollout restart deployment/kube-prometheus-grafana -n monitoring
+      - kubectl rollout status deployment/kube-prometheus-grafana -n monitoring --timeout=60s
+      - echo "✓ Grafana перезагружена"
+
+  app-pyroscope-enable:
+    desc: Включить Pyroscope профилирование (требует task pyroscope-up)
+    cmds:
+      - |
+        set -eu
+        PYROSCOPE_ADDR="http://pyroscope.{{.OBSERVABILITY_NAMESPACE}}.svc.cluster.local:4040"
+        echo "Включение Pyroscope профилирования..."
+        echo "  Server: $PYROSCOPE_ADDR"
+        kubectl set env deployment/gophprofile-server \
+          PYROSCOPE_ENABLED=true \
+          PYROSCOPE_SERVER_ADDRESS="$PYROSCOPE_ADDR" \
+          -n {{.APP_NAMESPACE}}
+        kubectl set env deployment/gophprofile-worker \
+          PYROSCOPE_ENABLED=true \
+          PYROSCOPE_SERVER_ADDRESS="$PYROSCOPE_ADDR" \
+          -n {{.APP_NAMESPACE}}
+        kubectl rollout restart deployment/gophprofile-server deployment/gophprofile-worker -n {{.APP_NAMESPACE}}
+        kubectl rollout status deployment/gophprofile-server -n {{.APP_NAMESPACE}} --timeout=2m
+        kubectl rollout status deployment/gophprofile-worker -n {{.APP_NAMESPACE}} --timeout=2m
+        echo "✓ Pyroscope включен (server + worker)"
+
+  app-pyroscope-disable:
+    desc: Отключить Pyroscope профилирование
+    cmds:
+      - |
+        echo "Отключение Pyroscope профилирования..."
+        kubectl set env deployment/gophprofile-server \
+          PYROSCOPE_ENABLED=false \
+          -n {{.APP_NAMESPACE}}
+        kubectl set env deployment/gophprofile-worker \
+          PYROSCOPE_ENABLED=false \
+          -n {{.APP_NAMESPACE}}
+        kubectl rollout restart deployment/gophprofile-server deployment/gophprofile-worker -n {{.APP_NAMESPACE}}
+        kubectl rollout status deployment/gophprofile-server -n {{.APP_NAMESPACE}} --timeout=2m
+        kubectl rollout status deployment/gophprofile-worker -n {{.APP_NAMESPACE}} --timeout=2m
+        echo "✓ Pyroscope отключен (server + worker)"
+
+  app-pyroscope-status:
+    desc: Проверить статус Pyroscope в приложении
+    cmds:
+      - |
+        echo "=== Pyroscope Configuration ==="
+        kubectl get deployment/gophprofile-server -n {{.APP_NAMESPACE}} \
+          -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="PYROSCOPE_ENABLED")]}' | jq . || echo "❌ Не найдена переменная"
+        kubectl get deployment/gophprofile-server -n {{.APP_NAMESPACE}} \
+          -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="PYROSCOPE_SERVER_ADDRESS")]}' | jq . || echo "❌ Не найдена переменная"
+        echo "=== Pod Status ==="
+        kubectl get pods -n {{.APP_NAMESPACE}} -l app.kubernetes.io/component=server

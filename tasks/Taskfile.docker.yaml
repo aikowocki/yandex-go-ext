@@ -1,0 +1,116 @@
+version: '3'
+
+vars:
+  COMPOSE_FILE: deployments/docker/docker-compose.yml
+  HARBOR_REGISTRY: localhost:30002
+  HARBOR_PROJECT: gophprofile
+  HARBOR_CREDENTIALS_FILE: '{{.HOME}}/.config/gophprofile/harbor-robot.env'
+
+tasks:
+  cronjob-retention:
+    desc: Однократно запустить retention cronjob
+    cmds:
+      - docker compose -f {{.COMPOSE_FILE}} run --rm cronjob retention
+
+  cronjob-reconcile:
+    desc: Однократно запустить cronjob сверки MinIO
+    cmds:
+      - docker compose -f {{.COMPOSE_FILE}} run --rm cronjob reconcile
+
+  cronjob-scheduler-up:
+    desc: Запустить контейнер планировщика cronjob
+    cmds:
+      - docker compose -f {{.COMPOSE_FILE}} up -d cronjob-scheduler
+
+  cronjob-scheduler-down:
+    desc: Остановить контейнер планировщика cronjob
+    cmds:
+      - docker compose -f {{.COMPOSE_FILE}} stop cronjob-scheduler
+
+  images-build-server:
+    internal: false
+    vars:
+      IMAGE_TAG:
+        sh: echo "${IMAGE_TAG:-$(git describe --always --dirty)}"
+    cmds:
+      - docker build -f deployments/docker/Dockerfile --target server -t {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/server:{{.IMAGE_TAG}} .
+
+  images-build-worker:
+    internal: false
+    vars:
+      IMAGE_TAG:
+        sh: echo "${IMAGE_TAG:-$(git describe --always --dirty)}"
+    cmds:
+      - docker build -f deployments/docker/Dockerfile --target worker -t {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/worker:{{.IMAGE_TAG}} .
+
+  images-build-cronjob:
+    internal: false
+    vars:
+      IMAGE_TAG:
+        sh: echo "${IMAGE_TAG:-$(git describe --always --dirty)}"
+    cmds:
+      - docker build -f deployments/docker/Dockerfile --target cronjob -t {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/cronjob:{{.IMAGE_TAG}} .
+
+  images-build-migrate:
+    internal: false
+    vars:
+      IMAGE_TAG:
+        sh: echo "${IMAGE_TAG:-$(git describe --always --dirty)}"
+    cmds:
+      - docker build -f deployments/docker/Dockerfile --target migrate -t {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/migrate:{{.IMAGE_TAG}} .
+
+  images-build:
+    desc: Собрать application images с Harbor tags (параллельно)
+    deps:
+      - images-build-server
+      - images-build-worker
+      - images-build-cronjob
+      - images-build-migrate
+
+  harbor-login:
+    desc: Авторизовать Docker в Harbor через robot credentials
+    cmds:
+      - |
+        set -eu
+        credentials="{{.HARBOR_CREDENTIALS_FILE}}"
+        test -f "$credentials"
+        registry="$(awk -F= '$1 == "HARBOR_REGISTRY" {sub(/^[^=]*=/, ""); print; exit}' "$credentials")"
+        username="$(awk -F= '$1 == "HARBOR_ROBOT_USERNAME" {sub(/^[^=]*=/, ""); print; exit}' "$credentials")"
+        secret="$(awk -F= '$1 == "HARBOR_ROBOT_SECRET" {sub(/^[^=]*=/, ""); print; exit}' "$credentials")"
+        export DOCKER_CONFIG="${TMPDIR:-/tmp}/gophprofile-docker-config"
+        mkdir -p "$DOCKER_CONFIG"
+        printf '{"auths":{}}\n' > "$DOCKER_CONFIG/config.json"
+        printf '%s' "$secret" | docker --config "$DOCKER_CONFIG" login "$registry" --username "$username" --password-stdin
+
+  harbor-images-push:
+    desc: Опубликовать application images в Harbor
+    vars:
+      IMAGE_TAG:
+        sh: echo "${IMAGE_TAG:-$(git describe --always --dirty)}"
+    cmds:
+      - DOCKER_CONFIG="${TMPDIR:-/tmp}/gophprofile-docker-config" docker --config "${TMPDIR:-/tmp}/gophprofile-docker-config" push {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/server:{{.IMAGE_TAG}}
+      - DOCKER_CONFIG="${TMPDIR:-/tmp}/gophprofile-docker-config" docker --config "${TMPDIR:-/tmp}/gophprofile-docker-config" push {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/worker:{{.IMAGE_TAG}}
+      - DOCKER_CONFIG="${TMPDIR:-/tmp}/gophprofile-docker-config" docker --config "${TMPDIR:-/tmp}/gophprofile-docker-config" push {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/cronjob:{{.IMAGE_TAG}}
+      - DOCKER_CONFIG="${TMPDIR:-/tmp}/gophprofile-docker-config" docker --config "${TMPDIR:-/tmp}/gophprofile-docker-config" push {{.HARBOR_REGISTRY}}/{{.HARBOR_PROJECT}}/migrate:{{.IMAGE_TAG}}
+
+  docker-up:
+    desc: Запустить локальную инфраструктуру с пересборкой локальных образов
+    cmds:
+      - docker compose -f {{.COMPOSE_FILE}} up -d --build --remove-orphans
+
+  docker-down:
+    desc: Остановить локальную инфраструктуру
+    cmds:
+      - docker compose -f {{.COMPOSE_FILE}} down
+
+  docker-restart:
+    desc: Перезапустить локальную инфраструктуру без удаления volumes
+    cmds:
+      - docker compose -f {{.COMPOSE_FILE}} down --remove-orphans
+      - task: docker-up
+
+  docker-reset:
+    desc: Сбросить локальную инфраструктуру с удалением всех volumes
+    cmds:
+      - docker compose -f {{.COMPOSE_FILE}} down -v --remove-orphans
+      - task: docker-up

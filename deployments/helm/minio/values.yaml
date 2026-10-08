@@ -1,0 +1,23 @@
+image:
+  repository: quay.io/minio/minio
+  tag: RELEASE.2025-07-23T15-54-02Z
+  pullPolicy: IfNotPresent
+mcImage:
+  repository: quay.io/minio/mc
+  tag: RELEASE.2025-07-21T05-28-08Z
+  pullPolicy: IfNotPresent
+rootUser: minioadmin
+rootPassword: minioadmin
+bucket: avatars
+storageClass: local-path
+storageSize: 5Gi
+console:
+  enabled: true
+  port: 9001
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

@@ -1,0 +1,51 @@
+@startuml error-flow
+
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontSize 12
+skinparam ArrowColor #333333
+skinparam ArrowFontSize 11
+
+skinparam activity {
+  BackgroundColor #E3F2FD
+  BorderColor #1565C0
+  FontColor #000
+  DiamondBackgroundColor #FFF9C4
+  DiamondBorderColor #F57F17
+}
+
+start
+
+:HTTP Request;
+:Global Middleware\n(OTEL · Metrics · Logger · Recover · CORS);
+
+if (Body > MaxUploadSize?) then (да)
+  :413 Request Entity Too Large;
+  kill
+endif
+
+if (Маршрут /api/v1/ ?) then (да)
+
+  if (Rate limit exceeded?) then (да)
+    :429 Too Many Requests;
+    kill
+  endif
+
+  if (Требует X-User-ID\nи заголовок отсутствует?) then (да)
+    :400 Bad Request\n"X-User-ID header required";
+    kill
+  endif
+
+endif
+
+:Handler;
+
+if (Бизнес-ошибка?) then (да)
+  :4xx / 5xx\n{"error": "message"};
+  kill
+endif
+
+:200 / 201 / 204 Success;
+
+stop
+
+@enduml

@@ -15,6 +15,7 @@ import (
 	"github.com/aikowocki/yandex-go-ext/internal/config"
 	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	"github.com/aikowocki/yandex-go-ext/internal/infra/postgres/gen"
+	"github.com/aikowocki/yandex-go-ext/internal/shared/resilience"
 )
 
 // DB оборачивает пул соединений и выбирает querier для текущего context.
@@ -27,6 +28,7 @@ type DB struct {
 	storageMetricReady atomic.Bool
 	metricsCancel      context.CancelFunc
 	metricsWG          sync.WaitGroup
+	breaker            *resilience.Breaker
 }
 
 // NewPool создаёт и проверяет пул PostgreSQL.
@@ -52,7 +54,7 @@ func NewPool(ctx context.Context, cfg config.DatabaseConfig) (*DB, error) {
 		pool.Close()
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
-	db := &DB{Pool: pool}
+	db := &DB{Pool: pool, breaker: resilience.New(resilience.Config{})}
 	db.registerMetrics()
 	db.startMetricRefresh(ctx)
 	return db, nil
@@ -157,5 +159,5 @@ func (db *DB) querier(ctx context.Context) gen.DBTX {
 	if tx, ok := txFromContext(ctx); ok {
 		return tx
 	}
-	return retryingDB{pool: db.Pool}
+	return retryingDB{pool: db.Pool, breaker: db.breaker}
 }

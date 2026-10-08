@@ -1,0 +1,22 @@
+# Aggregate entrypoint. Инфраструктура и приложение могут запускаться независимо друг от друга.
+
+helmDefaults:
+  wait: true
+  timeout: 600
+  atomic: false
+  cleanupOnFail: false
+  createNamespace: true
+
+environments:
+  dev:
+    values:
+      - environments/helmfile/dev.yaml
+  prod:
+    values:
+      - environments/helmfile/prod.yaml
+
+---
+
+helmfiles:
+  - path: deployments/helmfile/infra.yaml.gotmpl
+  - path: deployments/helmfile/app.yaml.gotmpl

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: gophprofile-minio
+description: MinIO для GophProfile
+version: 0.1.0
+appVersion: RELEASE.2025-07-23T15-54-02Z

@@ -1,0 +1,26 @@
+helmDefaults:
+  wait: true
+  timeout: 600
+  atomic: false
+  cleanupOnFail: false
+  createNamespace: true
+
+environments:
+  dev:
+    values:
+      - ../../environments/helmfile/dev.yaml
+  prod:
+    values:
+      - ../../environments/helmfile/prod.yaml
+
+---
+
+releases:
+  - name: gophprofile
+    namespace: gophprofile
+    chart: ../../deployments/helm/gophprofile
+    values:
+      - ../../deployments/helm/gophprofile/values-{{ .Environment.Name }}.yaml
+    set:
+      - name: image.tag
+        value: {{ .Values.imageTag | quote }}

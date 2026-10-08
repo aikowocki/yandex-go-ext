@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pyroscope.fullname" . }}
+  labels:
+    {{- include "pyroscope.labels" . | nindent 4 }}
+data:
+  pyroscope.yaml: |
+    target: all
+    server:
+      http_listen_port: {{ .Values.config.server.http_listen_port }}
+      log_level: {{ .Values.config.server.log_level }}
+    storage:
+      backend: filesystem
+      filesystem:
+        dir: {{ .Values.config.storage.filesystem.dir }}
+    pyroscopedb:
+      data_path: {{ .Values.config.storage.filesystem.dir }}

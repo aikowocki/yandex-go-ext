@@ -1,0 +1,6 @@
+imageTag: stable
+postgresqlChartVersion: 18.7.5
+kafkaChartVersion: 32.4.3
+otelChartVersion: 0.173.1
+prometheusStackChartVersion: 91.2.3
+esoChartVersion: 0.14.4

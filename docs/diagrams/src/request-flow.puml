@@ -1,0 +1,92 @@
+@startuml request-flow
+skinparam linetype ortho
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontSize 12
+skinparam ArrowColor #333333
+skinparam ArrowFontSize 11
+
+skinparam component {
+  BackgroundColor #E3F2FD
+  BorderColor #1565C0
+  FontColor #000
+}
+skinparam database {
+  BackgroundColor #E8F5E9
+  BorderColor #2E7D32
+  FontColor #000
+}
+skinparam package {
+  BackgroundColor #F3E5F5
+  BorderColor #7B1FA2
+  FontColor #000
+}
+skinparam rectangle {
+  BackgroundColor #FFFDE7
+  BorderColor #F9A825
+  FontColor #000
+}
+
+component "Client\n(Browser / API)" as client
+component "Traefik Ingress\ngophprofile.localhost" as ingress
+
+package "Global Middleware (все маршруты)" {
+  component "1. OTEL Tracer\notelecho.Middleware" as m1
+  component "2. Metrics\nPrometheus counters" as m2
+  component "3. Request Logger\nJSON log stdout" as m3
+  component "4. Recover\npanic -> 500" as m4
+  component "5. CORS\nCORSWithConfig" as m5
+  component "6. Body Limit\nMaxUploadSize+1MB" as m6
+}
+
+package "API Group /api/v1" {
+  component "Rate Limiter\n10 req/s, burst 20" as rl
+  component "RequireUserID\nX-User-ID header" as auth
+}
+
+rectangle "API Handlers" {
+  component "POST /avatars\nPATCH /:id/crop\nDELETE /:id\nDELETE /users/:id/avatar" as api_auth
+  component "GET /avatars/:id\nGET /:id/metadata\nGET /users/:id/avatar\nGET /users/:id/avatars" as api_open
+}
+
+rectangle "Other Routes" {
+  component "/livez /readyz /health\n/metrics /docs/*\n/ /web/*" as other
+}
+
+package "Business Logic" {
+  component "Avatar UseCase" as usecase
+}
+
+package "Data Layer" {
+  database "PostgreSQL" as pg
+  component "MinIO S3" as minio
+  component "Kafka" as kafka
+}
+
+component "Worker Pod" as worker
+
+client --> ingress
+ingress --> m1
+m1 --> m2
+m2 --> m3
+m3 --> m4
+m4 --> m5
+m5 --> m6
+
+m6 --> rl : /api/v1/*
+m6 --> other : прочие маршруты
+
+rl --> auth
+auth --> api_auth : X-User-ID OK
+rl --> api_open   : без auth
+
+api_auth --> usecase
+api_open --> usecase
+
+usecase --> pg
+usecase --> minio
+usecase --> kafka
+kafka --> worker
+worker --> pg
+worker --> minio
+
+@enduml

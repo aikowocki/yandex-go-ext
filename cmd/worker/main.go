@@ -19,7 +19,7 @@ func main() {
 	}
 	defer func() { _ = container.Close() }()
 
-	if err := container.Worker.Start(ctx); err != nil && ctx.Err() == nil {
+	if err := container.RunWorker(); err != nil && ctx.Err() == nil {
 		log.Fatal("worker stopped with error:", err)
 	}
 }

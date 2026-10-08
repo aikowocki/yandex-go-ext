@@ -1,0 +1,16 @@
+auth:
+  username: admin
+  htpasswd: 'admin:$2y$05$RDhCgCxhQ3UWyleK6ZtvbeWX53oZWsNXOZBJNzai9J1poX5SucW/K'
+routes:
+  - name: grafana
+    host: grafana.gophprofile.localhost
+    service: kube-prometheus-grafana
+    port: 80
+  - name: prometheus
+    host: prometheus.gophprofile.localhost
+    service: kube-prometheus-kube-prome-prometheus
+    port: 9090
+  - name: alertmanager
+    host: alertmanager.gophprofile.localhost
+    service: kube-prometheus-kube-prome-alertmanager
+    port: 9093

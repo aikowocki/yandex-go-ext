@@ -1,6 +1,7 @@
 package migrations
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"errors"
@@ -18,6 +19,14 @@ var migrationsFS embed.FS
 
 // Up применяет embedded migrations через golang-migrate.
 func Up(dsn string) error {
+	return UpContext(context.Background(), dsn)
+}
+
+// UpContext применяет embedded migrations через golang-migrate.
+func UpContext(ctx context.Context, dsn string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if strings.TrimSpace(dsn) == "" {
 		return fmt.Errorf("database dsn is empty")
 	}
@@ -28,7 +37,7 @@ func Up(dsn string) error {
 	}
 	defer func() { _ = db.Close() }()
 
-	if err := db.Ping(); err != nil {
+	if err := db.PingContext(ctx); err != nil {
 		return fmt.Errorf("ping database for migrations: %w", err)
 	}
 	driver, err := postgresdriver.WithInstance(db, &postgresdriver.Config{})

@@ -1,0 +1,155 @@
+@startuml monitoring-stack
+skinparam linetype ortho
+skinparam backgroundColor #FEFEFE
+skinparam defaultFontSize 11
+skinparam ArrowColor #333333
+
+skinparam component {
+  BackgroundColor #E3F2FD
+  BorderColor #1565C0
+  FontColor #000
+}
+skinparam database {
+  BackgroundColor #E8F5E9
+  BorderColor #2E7D32
+  FontColor #000
+}
+skinparam package {
+  BackgroundColor #F3E5F5
+  BorderColor #7B1FA2
+  FontColor #000
+}
+
+' === APPLICATION LAYER ===
+package "GophProfile Application" {
+  component "Server Pods :8080" as app_server
+  component "Worker Pods :8080" as app_worker
+  component "Migration Job :8080" as app_migrate
+  component "CronJob Pods :8080" as app_cron
+}
+
+' === METRICS COLLECTION ===
+package "Metrics Collection (gophprofile-deps)" {
+  component "ServiceMonitor\n(auto-discovery)" as sm
+  component "OTel Collector\n:8889 (Prometheus export)" as otel_collector
+}
+
+' === MONITORING STACK (monitoring namespace) ===
+package "Monitoring Stack (monitoring)" {
+  database "Prometheus :9090\n(15s eval interval)" as prometheus
+  component "Grafana :3000\n(dashboards)" as grafana
+  component "Alertmanager :9093\n(email routing)" as alertmanager
+}
+
+' === ALERT RULES ===
+package "Alert Rules & Queries" {
+  component "gophprofile.http\n(5xx rate, errors)" as rules_http
+  component "gophprofile.latency\n(p95 HTTP, avatar)" as rules_latency
+  component "gophprofile.messaging\n(DLQ, lag, outbox)" as rules_messaging
+  component "gophprofile.dependencies\n(database, storage)" as rules_deps
+}
+
+' === OBSERVABILITY STACK ===
+package "Observability (gophprofile-deps)" {
+  component "Jaeger :16686\n(tracing)" as jaeger
+  component "Loki :3100\n(log aggregation)" as loki
+  component "Pyroscope :4040\n(continuous profiling)" as pyroscope
+}
+
+' === EXPORTERS ===
+package "Exporters (gophprofile-deps)" {
+  component "Kafka Exporter\n:9308" as kafka_exporter
+  component "Node Exporter\n:9100" as node_exporter
+}
+
+' === EMAIL DELIVERY ===
+package "Alerting (gophprofile-deps)" {
+  component "Alertmanager\nredirects" as alertmanager_send
+  component "Mailpit :1025\n(local SMTP)" as mailpit
+}
+
+' === FLOWS ===
+
+' Application -> Metrics Collection
+app_server --> sm: /metrics export\n(scraped by SM)
+app_worker --> sm: /metrics export\n(scraped by SM)
+app_migrate --> sm: /metrics export\n(short-lived)
+app_cron --> sm: /metrics export\n(periodic)
+
+' ServiceMonitor -> OTel Collector
+sm --> otel_collector: Prometheus targets\n(job_name: app)
+
+' OTel Collector -> Prometheus
+otel_collector --> prometheus: :8889/metrics
+
+' Exporters -> Prometheus
+kafka_exporter --> prometheus: :9308/metrics
+node_exporter --> prometheus: :9100/metrics
+
+' Prometheus Scrape Config
+prometheus --> sm: auto-discovery (15s)
+prometheus --> kafka_exporter: static (15s)
+prometheus --> node_exporter: static (15s)
+
+' Alert Rules Evaluation
+prometheus --> rules_http: evaluate every 15s
+prometheus --> rules_latency: evaluate every 15s
+prometheus --> rules_messaging: evaluate every 15s
+prometheus --> rules_deps: evaluate every 15s
+
+' Alert Triggering
+rules_http --> alertmanager: (>0.05 5xx rate + traffic)\n(warning/critical)
+rules_latency --> alertmanager: (>2s p95 HTTP)\n(warning)
+rules_messaging --> alertmanager: (DLQ/lag/outbox)\n(critical/warning)
+rules_deps --> alertmanager: (database/storage down)\n(critical)
+
+' Alertmanager -> Mailpit
+alertmanager --> alertmanager_send: route by severity
+alertmanager_send --> mailpit: SMTP oncall@gophprofile.local
+mailpit --> grafana: (UI :8025 for viewing)
+
+' Data Visualization
+prometheus --> grafana: PromQL queries\n(service overview, dependencies)
+jaeger --> grafana: (traces display)
+loki --> grafana: (log display)
+pyroscope --> grafana: (profile display)
+mailpit --> grafana: (email archive)
+
+' Additional Trace/Log/Profile Collection
+app_server -.-> jaeger: OTLP gRPC :4317\n(traces & logs)
+app_worker -.-> jaeger: OTLP gRPC :4317\n(traces & logs)
+app_server -.-> loki: OTLP logs :3100\n(structured logs)
+app_worker -.-> loki: OTLP logs :3100\n(structured logs)
+app_server -.-> pyroscope: profile push :4040\n(optional)
+app_worker -.-> pyroscope: profile push :4040\n(optional)
+
+' Scrape Targets Reference
+note right of prometheus
+  **Scrape Targets:**
+  - prometheus:9090 (self)
+  - otel-collector:8889
+  - kafka-exporter:9308
+  - node-exporter:9100
+end note
+
+note left of rules_http
+  **Alert Groups:**
+  - http (5xx, uploads)
+  - latency (p95)
+  - messaging (DLQ, lag)
+  - dependencies (health)
+end note
+
+note right of alertmanager
+  Group by: [alertname, service_name, severity]
+  Group wait: 10s
+  Group interval: 1m
+  Repeat interval: 4h
+end note
+
+note right of mailpit
+  Local SMTP server for development
+  Email UI: localhost:8025
+end note
+
+@enduml

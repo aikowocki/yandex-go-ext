@@ -63,3 +63,34 @@ func TestHealthResponse(t *testing.T) {
 		})
 	}
 }
+
+func TestLiveResponseDoesNotCheckDependencies(t *testing.T) {
+	e := echo.New()
+	recorder := httptest.NewRecorder()
+	ctx := e.NewContext(httptest.NewRequest(http.MethodGet, "/livez", nil), recorder)
+
+	if err := liveResponse(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+}
+
+func TestReadyResponseUsesDependencyChecks(t *testing.T) {
+	e := echo.New()
+	recorder := httptest.NewRecorder()
+	ctx := e.NewContext(httptest.NewRequest(http.MethodGet, "/readyz", nil), recorder)
+	checks := DependencyChecks{
+		Database: func(context.Context) error { return nil },
+		Storage:  func(context.Context) error { return nil },
+		Broker:   func(context.Context) error { return nil },
+	}
+
+	if err := healthResponse(ctx, checks); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+}

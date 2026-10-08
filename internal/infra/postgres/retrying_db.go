@@ -8,30 +8,36 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aikowocki/yandex-go-ext/internal/infra/postgres/gen"
+	"github.com/aikowocki/yandex-go-ext/internal/shared/resilience"
 )
 
 type retryingDB struct {
-	pool *pgxpool.Pool
+	pool    *pgxpool.Pool
+	breaker *resilience.Breaker
 }
 
 var _ gen.DBTX = retryingDB{}
 
 func (d retryingDB) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	var tag pgconn.CommandTag
-	err := withRetry(ctx, isConnRetryable, func() error {
-		var err error
-		tag, err = d.pool.Exec(ctx, sql, args...)
-		return err
+	err := d.breaker.Do(ctx, isConnRetryable, func() error {
+		return withRetry(ctx, isConnRetryable, func() error {
+			var err error
+			tag, err = d.pool.Exec(ctx, sql, args...)
+			return err
+		})
 	})
 	return tag, err
 }
 
 func (d retryingDB) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 	var rows pgx.Rows
-	err := withRetry(ctx, isConnRetryable, func() error {
-		var err error
-		rows, err = d.pool.Query(ctx, sql, args...)
-		return err
+	err := d.breaker.Do(ctx, isConnRetryable, func() error {
+		return withRetry(ctx, isConnRetryable, func() error {
+			var err error
+			rows, err = d.pool.Query(ctx, sql, args...)
+			return err
+		})
 	})
 	return rows, err
 }

@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aikowocki/yandex-go-ext/internal/infra/observability"
 	"github.com/aikowocki/yandex-go-ext/internal/shared/logging"
 	"golang.org/x/sync/errgroup"
 )
@@ -53,8 +54,65 @@ func (c *Container) Run() error {
 	return group.Wait()
 }
 
-func (c *Container) shutdown(ctx context.Context, pprofServer *http.Server) {
+// RunWorker запускает worker и вспомогательный HTTP-сервер метрик до отмены контекста.
+func (c *Container) RunWorker() error {
+	if c == nil || c.Worker == nil || c.Config == nil {
+		return errors.New("worker is not initialized")
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	defer stop()
 	ctx = logging.WithLogger(ctx, c.logger)
+
+	metricsAddr := fmt.Sprintf("%s:%d", c.Config.Server.Host, c.Config.Server.Port)
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", observability.PrometheusHandler())
+	metricsMux.HandleFunc("/livez", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+	metricsServer := &http.Server{
+		Addr:              metricsAddr,
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.Go(func() error {
+		logging.Info(groupCtx, "starting worker metrics server", logging.String("addr", metricsAddr))
+		if err := metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	})
+	group.Go(func() error {
+		logging.Info(groupCtx, "starting worker")
+		return c.Worker.Start(groupCtx)
+	})
+
+	pprofServer := newPprofServer(c.Config.Server.PprofAddress)
+	if pprofServer != nil {
+		group.Go(func() error {
+			if err := pprofServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				logging.Warn(groupCtx, "pprof server stopped", logging.Err(err))
+			}
+			return nil
+		})
+	}
+
+	<-groupCtx.Done()
+	logging.Info(groupCtx, "shutdown signal received")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	_ = metricsServer.Shutdown(shutdownCtx)
+	c.shutdown(shutdownCtx, pprofServer)
+
+	return group.Wait()
+}
+
+func (c *Container) shutdown(ctx context.Context, pprofServer *http.Server) {
 	if pprofServer != nil {
 		_ = pprofServer.Shutdown(ctx)
 	}
